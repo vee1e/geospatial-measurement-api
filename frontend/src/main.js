@@ -6,45 +6,49 @@ const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // matches the API's GEO_MAX_UPLOAD_B
 
 const drop = document.querySelector("#drop");
 const fileInput = document.querySelector("#file-input");
+const newFileButton = document.querySelector("#new-file");
 const statusSection = document.querySelector("#status");
 const statusRail = document.querySelector("#status-rail");
 const statusMessage = document.querySelector("#status-message");
 const readout = document.querySelector("#readout");
 const featuresSection = document.querySelector("#features");
 const featureRows = document.querySelector("#feature-rows");
-const emptyState = document.querySelector("#empty");
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const numberFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
-document.querySelector("#foot-api").textContent = `api: ${API_BASE || window.location.origin}`;
-
 // --- upload -----------------------------------------------------------------
 
-drop.addEventListener("click", () => fileInput.click());
+function pickFile() {
+  fileInput.click();
+}
+
+drop.addEventListener("click", pickFile);
+newFileButton.addEventListener("click", pickFile);
 drop.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    fileInput.click();
+    pickFile();
   }
 });
 
 ["dragenter", "dragover"].forEach((name) =>
-  drop.addEventListener(name, (event) => {
+  document.addEventListener(name, (event) => {
     event.preventDefault();
     drop.classList.add("is-over");
   })
 );
 
 ["dragleave", "drop"].forEach((name) =>
-  drop.addEventListener(name, (event) => {
+  document.addEventListener(name, (event) => {
     event.preventDefault();
     drop.classList.remove("is-over");
   })
 );
 
-drop.addEventListener("drop", (event) => {
-  const file = event.dataTransfer.files?.[0];
+// Dropping works anywhere on the page, including after the drop target is gone.
+document.addEventListener("drop", (event) => {
+  const file = event.dataTransfer?.files?.[0];
   if (file) send(file);
 });
 
@@ -77,6 +81,7 @@ async function send(file) {
 
   const body = new FormData();
   body.append("file", file, file.name);
+  drop.hidden = true; // the results take over the right pane
   showStatus({ filename: file.name, status: "UPLOADING" }, "Uploading…");
 
   let created;
@@ -156,7 +161,6 @@ async function poll(fileId, timeoutMs = 90_000) {
 // --- rendering --------------------------------------------------------------
 
 function showStatus(record, message, isError = false, working = false) {
-  emptyState.hidden = true;
   statusSection.hidden = false;
   const stateClass =
     record.status === "COMPLETED"
@@ -246,7 +250,7 @@ function featureRow(feature) {
 
   return `<tr>
     <td class="col-index">${feature.index + 1}</td>
-    <td><span class="geom-type">${escapeHtml(feature.geometry_type)}</span>${note}</td>
+    <td class="col-geom"><span class="geom-type">${escapeHtml(feature.geometry_type)}</span>${note}</td>
     <td><div class="props">${props || '<span class="value-muted">no attributes</span>'}</div></td>
     <td class="col-num">${value}</td>
   </tr>`;
