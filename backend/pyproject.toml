@@ -1,0 +1,40 @@
+[project]
+name = "geo-measure-api"
+version = "1.0.0"
+description = "Upload geospatial files (Shapefile zip / KML) and get per-feature measurements."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.12",
+    "pydantic>=2.9",
+    "shapely>=2.0.7",
+    "pyproj>=3.7",
+    "pyshp>=3.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "httpx>=0.27",
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# Explicit selection: the defaults vary between ruff releases.
+# B008 is ignored because FastAPI's Depends() in an argument default is the idiom.
+select = ["E", "F", "I", "UP", "B", "RUF"]
+ignore = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.uv]
+package = false

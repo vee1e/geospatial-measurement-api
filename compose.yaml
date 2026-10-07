@@ -1,0 +1,31 @@
+services:
+  geoapi:
+    build: ./backend
+    image: geo-measure-api:latest
+    container_name: geoapi
+    restart: unless-stopped
+    init: true
+    environment:
+      GEO_CORS_ORIGINS: "https://geo.lverma.com,https://geo-measure-web.vercel.app"
+      GEO_MAX_UPLOAD_BYTES: "26214400"
+    volumes:
+      - /srv/geoapi/data:/data
+    cpus: 1.0
+    mem_limit: 512m
+    pids_limit: 64
+    networks:
+      - personal-apps
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    expose:
+      - "8000"
+
+networks:
+  personal-apps:
+    # The Caddy reverse proxy lives in the personal-apps stack; joining its network
+    # lets it reach this container by name without publishing a port on the host.
+    external: true
+    name: personal-apps_default

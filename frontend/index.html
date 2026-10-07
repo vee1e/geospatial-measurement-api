@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Geo Measure — shapefile and KML measurements</title>
+    <meta
+      name="description"
+      content="Upload a zipped Shapefile or a KML and read per-feature area and length measurements."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23000'/%3E%3Cpath d='M16 4v24M4 16h24' stroke='%23fff' stroke-width='2'/%3E%3Crect x='12' y='12' width='8' height='8' fill='%23000' stroke='%23fff' stroke-width='2'/%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <header class="site-head">
+      <a class="wordmark" href="/">geo<span class="wordmark-dot">·</span>measure</a>
+      <nav class="head-links">
+        <a href="/api/docs" target="_blank" rel="noreferrer">api reference</a>
+        <a href="https://github.com/vee1e/geospatial-measurement-api" target="_blank" rel="noreferrer">source</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">shapefile / kml in, measurements out</p>
+          <h1>Upload a survey file and read its measurements.</h1>
+          <p class="lede">
+            The service reads every feature, reports its geometry type, coordinate system and
+            attributes, then measures polygons in square metres and lines in metres after
+            reprojecting them out of latitude and longitude.
+          </p>
+        </div>
+
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a file to upload">
+          <input id="file-input" type="file" accept=".zip,.kml" hidden />
+          <div class="drop-inner">
+            <svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 16V4m0 0L7 9m5-5 5 5" />
+              <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+            </svg>
+            <p class="drop-title">Drop a file, or choose one</p>
+            <p class="drop-hint">.zip containing a Shapefile, or .kml — up to 25 MB</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="status" id="status" hidden>
+        <div class="status-rail" id="status-rail"></div>
+        <p class="status-message" id="status-message"></p>
+      </section>
+
+      <section class="readout" id="readout" hidden>
+        <div class="readout-grid" aria-hidden="true"></div>
+        <div class="readout-cell">
+          <p class="readout-label">total area</p>
+          <p class="readout-value"><span id="area-value">0</span><span class="readout-unit">m²</span></p>
+          <p class="readout-sub" id="area-sub">—</p>
+        </div>
+        <div class="readout-cell">
+          <p class="readout-label">total length</p>
+          <p class="readout-value"><span id="length-value">0</span><span class="readout-unit">m</span></p>
+          <p class="readout-sub" id="length-sub">—</p>
+        </div>
+        <div class="readout-cell readout-meta">
+          <p class="readout-label">projection used</p>
+          <p class="readout-code" id="calc-crs">—</p>
+          <p class="readout-sub" id="crs-note">—</p>
+        </div>
+      </section>
+
+      <section class="features" id="features" hidden>
+        <div class="features-head">
+          <h2>Features</h2>
+          <p class="features-count" id="features-count"></p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col" class="col-index">#</th>
+                <th scope="col">geometry</th>
+                <th scope="col">attributes</th>
+                <th scope="col" class="col-num">measurement</th>
+              </tr>
+            </thead>
+            <tbody id="feature-rows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="empty" id="empty">
+        <p>No file loaded.</p>
+        <p class="empty-sub">Upload one above to see its features and measurements.</p>
+      </section>
+
+      <section class="how">
+        <div class="how-col">
+          <h2>What happens to your file</h2>
+          <p>
+            The upload returns immediately and a worker parses the archive in the background.
+            Each feature is projected into one metre-based coordinate system for the whole
+            file, so numbers stay comparable across features.
+          </p>
+        </div>
+        <div class="how-col">
+          <h2>Endpoints</h2>
+          <ul class="endpoints">
+            <li><code>POST /api/files/</code><span>upload</span></li>
+            <li><code>GET /api/files/{id}/</code><span>file information</span></li>
+            <li><code>GET /api/files/{id}/measurements/</code><span>measurements</span></li>
+            <li><code>GET /api/health/</code><span>health</span></li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-foot">
+      <p>Geospatial File Measurement API</p>
+      <p class="foot-mono" id="foot-api">api: —</p>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
