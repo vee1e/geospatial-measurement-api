@@ -11,8 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 
-from ..config import Settings
-from ..config import settings as default_settings
+from ..config import settings
 from ..db import Database, now_iso
 from ..geo.readers import FileRejected, detect_format, has_valid_magic
 from ..worker import Processor
@@ -31,10 +30,6 @@ def get_db(request: Request) -> Database:
 
 def get_processor(request: Request) -> Processor:
     return request.app.state.processor
-
-
-def get_settings() -> Settings:
-    return default_settings
 
 
 def info_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -87,7 +82,6 @@ async def upload_file(
     file: UploadFile,
     db: Database = Depends(get_db),
     processor: Processor = Depends(get_processor),
-    config: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     filename = (file.filename or "").strip()
     if not filename:
@@ -114,15 +108,15 @@ async def upload_file(
 
     file_id = secrets.token_hex(6)
     suffix = Path(filename).suffix.lower()
-    destination = config.data_dir / "uploads" / f"{file_id}{suffix}"
+    destination = settings.data_dir / "uploads" / f"{file_id}{suffix}"
     destination.parent.mkdir(parents=True, exist_ok=True)
     written = await _save_in_chunks(file, destination)
 
-    if written > config.max_upload_bytes:
+    if written > settings.max_upload_bytes:
         destination.unlink(missing_ok=True)
         raise HTTPException(
             status_code=413,
-            detail=f"file is {written} bytes, limit is {config.max_upload_bytes}",
+            detail=f"file is {written} bytes, limit is {settings.max_upload_bytes}",
         )
 
     record = {
