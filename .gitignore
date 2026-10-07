@@ -10,3 +10,7 @@ data/
 .env
 .DS_Store
 *.egg-info/
+
+# The global ignore file skips uv.lock everywhere; this repo keeps it so the
+# Docker build can run `uv sync --frozen` and reproduce the tested environment.
+!backend/uv.lock
