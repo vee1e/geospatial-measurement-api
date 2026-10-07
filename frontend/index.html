@@ -25,6 +25,13 @@
     <header class="site-head">
       <a class="wordmark" href="/">geo<span class="wordmark-dot">·</span>measure</a>
       <nav class="head-links">
+        <button class="ghost-button" id="new-file" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 16V4m0 0L7 9m5-5 5 5" />
+            <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+          </svg>
+          upload
+        </button>
         <a href="https://geo-api.lverma.com/docs" target="_blank" rel="noreferrer">api</a>
         <a href="https://github.com/vee1e/geospatial-measurement-api" target="_blank" rel="noreferrer">source</a>
       </nav>
@@ -69,10 +76,7 @@
         <div class="features" id="features" hidden>
           <div class="features-head">
             <h2>Features</h2>
-            <div class="head-right">
-              <p class="features-count" id="features-count"></p>
-              <button class="link-button" id="new-file" type="button">new file</button>
-            </div>
+            <p class="features-count" id="features-count"></p>
           </div>
           <div class="table-wrap">
             <table>
