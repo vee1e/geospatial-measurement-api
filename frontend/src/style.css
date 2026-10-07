@@ -6,7 +6,7 @@
   --text: #ededea;
   --mute: #8a8a84;
   --faint: #5a5a56;
-  --pad: clamp(16px, 2vw, 40px);
+  --pad: clamp(28px, 3vw, 64px);
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: "Space Grotesk", system-ui, -apple-system, sans-serif;
 }
@@ -95,7 +95,7 @@ code {
 /* --- panes --- */
 
 main {
-  padding: 0 var(--pad) clamp(16px, 2vh, 28px);
+  padding: 0 var(--pad) clamp(24px, 3vh, 44px);
   display: flex;
   flex-direction: column;
 }
@@ -105,7 +105,7 @@ main {
   align-items: baseline;
   flex-wrap: wrap;
   gap: 8px clamp(16px, 2vw, 32px);
-  margin-top: clamp(20px, 3.2vh, 40px);
+  margin-top: clamp(36px, 5.5vh, 76px);
 }
 
 .topline h1 {
