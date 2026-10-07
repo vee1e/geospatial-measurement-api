@@ -2,6 +2,7 @@ import "./style.css";
 
 const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
 const API = `${API_BASE}/api`;
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // matches the API's GEO_MAX_UPLOAD_BYTES
 
 const drop = document.querySelector("#drop");
 const fileInput = document.querySelector("#file-input");
@@ -59,6 +60,16 @@ async function send(file) {
     showStatus(
       { filename: file.name, status: "REJECTED" },
       `Unsupported type. Send a .zip containing a Shapefile, or a .kml — got "${file.name}".`,
+      true
+    );
+    return;
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    showStatus(
+      { filename: file.name, status: "REJECTED" },
+      `Too large: ${numberFormat.format(file.size)} B, limit is ${numberFormat.format(
+        MAX_UPLOAD_BYTES
+      )} B.`,
       true
     );
     return;
@@ -124,7 +135,9 @@ function describeError(payload) {
     const { message, error } = payload.detail;
     return [message, error].filter(Boolean).join(": ");
   }
-  return payload.message || "request failed";
+  if (payload.message) return payload.message;
+  // A non-JSON body means a proxy rejected the request before it reached the API.
+  return "The request was refused before it reached the API. If it was an upload, it was probably over the size limit.";
 }
 
 async function poll(fileId, timeoutMs = 90_000) {

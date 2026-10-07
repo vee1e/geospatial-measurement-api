@@ -26,6 +26,9 @@ for _ in $(seq 1 30); do
 done
 echo "container: $(docker inspect geoapi --format '{{.State.Health.Status}}')"
 
-echo "==> local health check through caddy"
-curl -s -H "Host: geo-api.lverma.com" http://127.0.0.1:80/api/health/
+echo "==> health check from inside the docker network"
+docker exec personal-apps-caddy-1 wget -qO- http://geoapi:8000/api/health/
+echo
+echo "==> through the public endpoint"
+curl -s --max-time 15 https://geo-api.lverma.com/api/health/
 echo
