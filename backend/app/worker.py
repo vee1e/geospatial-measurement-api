@@ -52,17 +52,6 @@ class Processor:
     def enqueue(self, file_id: str) -> None:
         self._queue.put(file_id)
 
-    def drain(self) -> None:
-        """Process everything queued so far. Used by tests to avoid timing sleeps."""
-        while True:
-            try:
-                file_id = self._queue.get_nowait()
-            except queue.Empty:
-                return
-            if file_id is None:
-                continue
-            self._handle(file_id)
-
     def _handle(self, file_id: str) -> None:
         try:
             process_file(file_id, self._db, self._settings)

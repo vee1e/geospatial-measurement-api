@@ -8,11 +8,24 @@ services:
     environment:
       GEO_CORS_ORIGINS: "https://geo.lverma.com,https://geo-measure-web.vercel.app"
       GEO_MAX_UPLOAD_BYTES: "26214400"
+      GEO_MAX_ZIP_BYTES: "67108864"
+      GEO_RETENTION_DAYS: "7"
     volumes:
-      - /srv/geoapi/data:/data
+      # ./data resolves to the checkout, so a fresh clone works without edits;
+      # deploy.sh chowns it to the uid the container runs as.
+      - ./data:/data
+    # Peak memory scales with the expanded archive, so the cap sits above the
+    # worst case the 64 MB zip budget can produce.
     cpus: 1.0
-    mem_limit: 512m
+    mem_limit: 1g
     pids_limit: 64
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       - personal-apps
     logging:

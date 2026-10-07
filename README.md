@@ -61,8 +61,8 @@ Returns `202 Accepted` as soon as the file is on disk. Processing happens in the
 ```json
 {
   "id": "a63a3d4f062d",
-  "filename": "survey.zip",
-  "format": "SHAPEFILE",
+  "filename": "sample.kml",
+  "format": "KML",
   "size_bytes": 684,
   "feature_count": 0,
   "crs": null,
@@ -79,9 +79,12 @@ Rejected uploads:
 
 | Status | When |
 | --- | --- |
-| `400` | No file, empty file, or no filename |
-| `413` | Larger than 25 MB (configurable with `GEO_MAX_UPLOAD_BYTES`) |
-| `415` | Not a `.zip` or `.kml` |
+| `400` | Empty file, or a part with no filename |
+| `413` | Body larger than 25 MB (`GEO_MAX_UPLOAD_BYTES`), a filename over 200 characters, or the whole request over the same cap |
+| `415` | Not a `.zip` or `.kml`, or the bytes do not match the extension (text named `fake.zip`) |
+| `422` | No `file` field in the multipart body (FastAPI validation) |
+
+The size cap is enforced twice: by Caddy at the edge (`request_body { max_size }`) and again by an in-process check before the multipart parser runs, so an oversized body is never buffered.
 
 ### GET /api/files/{id}/
 
@@ -95,7 +98,7 @@ File information, same shape as the upload response plus the results of processi
   "size_bytes": 684,
   "feature_count": 3,
   "crs": "EPSG:4326",
-  "crs_assumed": true,
+  "crs_assumed": false,
   "calculation_crs": "EPSG:32643",
   "status": "COMPLETED",
   "error": null,
@@ -120,7 +123,7 @@ curl http://127.0.0.1:8000/api/files/a63a3d4f062d/measurements/
   "filename": "survey.kml",
   "format": "KML",
   "source_crs": "EPSG:4326",
-  "crs_assumed": true,
+  "crs_assumed": false,
   "crs_note": null,
   "calculation_crs": "EPSG:32643",
   "projection_strategy": "utm",
@@ -166,13 +169,11 @@ Either way the rest of the file still completes.
 | `409` | Still `PENDING` or `PROCESSING`; try again shortly |
 | `422` | The file finished as `FAILED`; `detail.error` says why |
 
-### GET /api/files/
-
-The 50 most recent uploads, newest first. `?limit=200` caps it at 200.
-
 ### GET /api/health/
 
-`{"status": "ok"}`. Used by the container health check.
+`{"status": "ok"}`, or `503` while the processing worker is down. Used by the container
+health check, so a dead worker restarts the container instead of accepting uploads that
+never finish.
 
 ## Architecture
 
@@ -190,7 +191,7 @@ geospatial-measurement-api/
 │   │       ├── readers.py   Shapefile and KML parsing
 │   │       ├── crs.py       CRS resolution and projection choice
 │   │       └── measure.py   measurement rules, per feature
-│   ├── tests/               21 tests over the API and the measurements
+│   ├── tests/               31 tests over the API, the measurements, and edge cases
 │   └── Dockerfile
 ├── frontend/                Vite site, no framework
 ├── compose.yaml
@@ -220,11 +221,11 @@ A feature that throws (bad ring, failed reprojection) produces an `error` field 
 
 Latitude and longitude are angles. Measuring in degrees gives square degrees and degrees, which are not distances, so the geometry is projected first.
 
-- The source coordinate system comes from a `.prj` sidecar for Shapefiles. KML is defined to use WGS 84. With neither, the configured default (`EPSG:4326`) is used and the response sets `crs_assumed: true` so nobody mistakes a guess for a declaration.
+- The source coordinate system comes from a `.prj` sidecar for Shapefiles. KML is WGS 84 by specification and declares it outright, so `crs_assumed` stays false for KML. When a shapefile has no `.prj` at all, the configured default (`EPSG:4326`) is used and the response sets `crs_assumed: true` so nobody mistakes a guess for a declaration. `GEO_ASSUMED_CRS` changes that default; it does not touch KML.
 - One projection is chosen for the whole file from the file's extent, so features stay comparable:
-  - already projected in metres → measure in place
-  - extent fits one UTM zone (6° wide) and latitude is between 80°S and 84°N → that UTM zone
-  - anything wider or polar → Lambert Azimuthal Equal Area centred on the extent
+  - already projected → measure in it, converting to metres through the axis unit when the projection is in feet or another unit
+  - extent falls inside a single UTM zone and latitude is between 80°S and 84°N → that UTM zone
+  - anything else (wider extent, antimeridian, polar) → Lambert Azimuthal Equal Area centred on the extent, with longitudes averaged on a circle so a Fiji-shaped file is not centred on the far side of the planet
 - The choice is reported as `calculation_crs` and `projection_strategy`, never hidden.
 
 Worked example: a 0.01° by 0.01° square near Delhi is projected to EPSG:32643 and measures 1,084,264 m². The same square measured naively in degrees would read 0.0001.
@@ -239,7 +240,7 @@ Worked example: a 0.01° by 0.01° square near Delhi is projected to EPSG:32643 
 
 **Measurements stored as one JSON document per file.** The API always serves them with the file they came from, so one document means one query per request. Storing one row per feature would help only if features were queried alone, which nothing does.
 
-**pyshp plus pyproj plus shapely, no GDAL.** GDAL is the standard tool and reads more formats, but its wheels and system libraries make the image several hundred megabytes and the build slower. pyshp reads Shapefiles, pyproj handles coordinate maths, shapely does the geometry. The image stays under 300 MB. The cost: no GeoJSON, GeoPackage or raster support yet.
+**pyshp plus pyproj plus shapely, no GDAL.** GDAL is the standard tool and reads more formats, but its wheels and system libraries make the image several hundred megabytes and the build slower. pyshp reads Shapefiles, pyproj handles coordinate maths, shapely does the geometry. The image is 410 MB as reported by `docker images` (290 MB unpacked). The cost: no GeoJSON, GeoPackage or raster support yet.
 
 **KML parsed with `xml.etree`.** KML is a small, flat format. A dependency-free parser handles placemarks, polygons with holes, and `MultiGeometry`, and it treats a missing namespace the way some exporters write it.
 
@@ -253,7 +254,7 @@ Worked example: a 0.01° by 0.01° square near Delhi is projected to EPSG:32643 
 
 ```bash
 cd backend
-uv run pytest          # 21 tests, about a second
+uv run pytest          # 31 tests, about a second
 uv run ruff check .    # lint
 ```
 
@@ -262,15 +263,18 @@ Coverage of the required paths:
 | Requirement | Test |
 | --- | --- |
 | Creating a job (upload) | `test_upload_returns_pending_then_completes` |
-| Input validation | `test_unsupported_extension_is_rejected`, `test_empty_upload_is_rejected`, `test_zip_without_shapefile_fails_the_record` |
+| Input validation | `test_unsupported_extension_is_rejected`, `test_empty_upload_is_rejected`, `test_zip_without_shapefile_fails_the_record`, `test_text_file_named_zip_is_refused_at_upload`, `test_oversized_request_is_refused_before_parsing` |
 | File information | `test_measurements_endpoint_matches_the_spec_shape`, `test_shapefile_zip_roundtrip` |
 | Measurements | `test_area_is_real_area_not_square_degrees`, `test_length_is_metres`, `test_projection_is_recorded_per_file` |
-| Status and progress | `test_measurements_are_unavailable_while_pending` |
-| Individual failure handling | `test_one_bad_feature_does_not_sink_the_file`, `test_corrupt_shapefile_fails_the_record` |
-| CRS handling | `test_shapefile_without_prj_is_flagged_as_assumed` |
-| Totals | `test_summary_totals_only_count_measured_features` |
+| Units in non-metre projections | `test_projected_source_in_feet_is_converted_to_metres` |
+| Status and progress | `test_measurements_are_unavailable_while_pending`, `test_health_reports_a_dead_worker` |
+| Individual failure handling | `test_one_bad_feature_does_not_sink_the_file`, `test_corrupt_shapefile_fails_the_record`, `test_kml_with_no_placemarks_fails_the_record` |
+| CRS handling | `test_shapefile_without_prj_is_flagged_as_assumed`, `test_antimeridian_extent_stays_accurate` |
+| Archives real tools produce | `test_macos_resource_fork_zip_is_accepted`, `test_sidecars_in_another_folder_are_found`, `test_shapefile_without_attributes_completes` |
+| Totals and serialisation | `test_summary_totals_only_count_measured_features`, `test_stored_document_is_strict_json`, `test_nan_attribute_becomes_null` |
+| Enumeration is not exposed | `test_file_listing_is_not_exposed` |
 
-`test_area_is_real_area_not_square_degrees` compares the API's answer against the geodesic area computed by `pyproj.Geod` for the same ring, with a 1% tolerance. That catches a projection mistake rather than only checking that a number exists.
+`test_area_is_real_area_not_square_degrees` compares the API's answer against the geodesic area computed by `pyproj.Geod` for the same ring, with a 1% tolerance. That catches a projection mistake rather than only checking that a number exists. `test_projected_source_in_feet_is_converted_to_metres` does the same for a foot-based State Plane file, which would otherwise be off by a factor of 10.76.
 
 ## Deployment
 
@@ -290,10 +294,16 @@ Configuration is read from the environment:
 | `GEO_DATA_DIR` | `./data` | Uploads directory |
 | `GEO_DATABASE` | `./data/geo.db` | SQLite file |
 | `GEO_CORS_ORIGINS` | empty | Comma-separated allowed origins |
-| `GEO_MAX_UPLOAD_BYTES` | `26214400` | Upload size limit |
+| `GEO_MAX_UPLOAD_BYTES` | `26214400` | Upload size limit, enforced in process |
 | `GEO_MAX_ZIP_ENTRIES` | `64` | Entries allowed in a zip |
-| `GEO_MAX_ZIP_BYTES` | `209715200` | Uncompressed size limit |
-| `GEO_ASSUMED_CRS` | `EPSG:4326` | Used when a file declares no CRS |
+| `GEO_MAX_ZIP_BYTES` | `67108864` | Uncompressed size limit; peak memory is about 4x this |
+| `GEO_MAX_FEATURES` | `50000` | Features accepted in one file |
+| `GEO_RETENTION_DAYS` | `7` | Uploads older than this are deleted at startup |
+| `GEO_ASSUMED_CRS` | `EPSG:4326` | Used when a shapefile declares no CRS |
+
+Uploads and their rows are removed at startup once they pass the retention window, so the
+volume does not grow without bound. Records stranded by a restart are re-queued at
+startup rather than staying `PENDING` forever.
 
 ## Learning and future scope
 
@@ -303,7 +313,7 @@ What is deliberately missing, in the order it should be added:
 
 1. **GeoJSON and GeoPackage input.** Both come almost free with a GDAL-based reader, and the readers module already returns one shape for every format.
 2. **Idempotent uploads.** Hash the file so a re-upload of the same bytes reuses the stored result instead of reprocessing.
-3. **Cleanup of old files.** Uploads accumulate on disk. A retention job with a TTL keeps storage bounded.
+3. **Rate limiting at the proxy.** Retention bounds disk use, but nothing yet bounds how often one caller can upload; a per-IP limit in Caddy is the cheap next step.
 4. **Authentication and rate limiting.** Required before this is open to more than a reviewer.
 5. **A real queue.** One thread is enough for one process. More processes or a shared queue (Redis, RQ) is the step beyond that, and `Processor` is the seam where it would go.
 6. **Geometry simplification for very large layers.** A 50 MB Shapefile with a million features takes seconds to project. Simplifying before measurement would cut that, at the cost of precision, and only where the caller asks for it.

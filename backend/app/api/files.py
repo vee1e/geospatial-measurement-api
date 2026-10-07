@@ -2,22 +2,27 @@
 
 from __future__ import annotations
 
+import logging
 import secrets
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import Response
 
 from ..config import Settings
 from ..config import settings as default_settings
 from ..db import Database, now_iso
-from ..geo.readers import FileRejected, detect_format
+from ..geo.readers import FileRejected, detect_format, has_valid_magic
 from ..worker import Processor
+
+log = logging.getLogger("geo.api")
 
 router = APIRouter(prefix="/api", tags=["files"])
 
 MAX_FILENAME_LENGTH = 200
+CHUNK_BYTES = 1024 * 1024
 
 
 def get_db(request: Request) -> Database:
@@ -55,13 +60,30 @@ def _not_found(file_id: str) -> HTTPException:
 
 
 @router.get("/health/")
-def health() -> dict[str, str]:
+def health(request: Request) -> dict[str, str]:
+    """Liveness for the container health check: 503 while the worker is down.
+
+    A dead worker would otherwise accept uploads forever while every file stayed
+    PENDING, and the container would keep reporting healthy.
+    """
+    processor: Processor = request.app.state.processor
+    if not processor.running:
+        raise HTTPException(status_code=503, detail="processing worker is not running")
     return {"status": "ok"}
+
+
+async def _save_in_chunks(file: UploadFile, destination: Path) -> int:
+    """Copy the spooled upload to disk in chunks, so the whole file is never in RAM."""
+    written = 0
+    with destination.open("wb") as handle:
+        while chunk := await file.read(CHUNK_BYTES):
+            written += len(chunk)
+            await run_in_threadpool(handle.write, chunk)
+    return written
 
 
 @router.post("/files/", status_code=202)
 async def upload_file(
-    request: Request,
     file: UploadFile,
     db: Database = Depends(get_db),
     processor: Processor = Depends(get_processor),
@@ -76,57 +98,59 @@ async def upload_file(
         )
 
     try:
-        source_format = detect_format(filename)
+        detect_format(filename)
     except FileRejected as exc:
         raise HTTPException(status_code=415, detail=str(exc)) from exc
 
-    payload = await file.read()
-    if not payload:
+    head = await file.read(512)
+    await file.seek(0)
+    if not head:
         raise HTTPException(status_code=400, detail="uploaded file is empty")
-    if len(payload) > config.max_upload_bytes:
+    if not has_valid_magic(filename, head):
         raise HTTPException(
-            status_code=413,
-            detail=f"file is {len(payload)} bytes, limit is {config.max_upload_bytes}",
+            status_code=415,
+            detail=f"'{filename}' does not look like a {filename.rsplit('.', 1)[-1]} file",
         )
 
     file_id = secrets.token_hex(6)
     suffix = Path(filename).suffix.lower()
     destination = config.data_dir / "uploads" / f"{file_id}{suffix}"
     destination.parent.mkdir(parents=True, exist_ok=True)
-    await run_in_threadpool(destination.write_bytes, payload)
+    written = await _save_in_chunks(file, destination)
+
+    if written > config.max_upload_bytes:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=413,
+            detail=f"file is {written} bytes, limit is {config.max_upload_bytes}",
+        )
 
     record = {
         "id": file_id,
         "filename": Path(filename).name,
-        "format": source_format,
-        "size_bytes": len(payload),
+        "format": detect_format(filename),
+        "size_bytes": written,
         "status": "PENDING",
         "stored_path": str(destination),
         "created_at": now_iso(),
     }
-    db.create_file(record)
+    await run_in_threadpool(db.create_file, record)
     processor.enqueue(file_id)
 
-    return info_record(db.get_file(file_id))
-
-
-@router.get("/files/")
-def list_files(db: Database = Depends(get_db), limit: int = 50) -> dict[str, Any]:
-    rows = db.list_files(limit=min(max(limit, 1), 200))
-    return {"count": len(rows), "files": [info_record(row) for row in rows]}
+    return info_record(await run_in_threadpool(db.get_file, file_id))
 
 
 @router.get("/files/{file_id}/")
-def get_file(file_id: str, db: Database = Depends(get_db)) -> dict[str, Any]:
-    record = db.get_file(file_id)
+async def get_file(file_id: str, db: Database = Depends(get_db)) -> dict[str, Any]:
+    record = await run_in_threadpool(db.get_file, file_id)
     if record is None:
         raise _not_found(file_id)
     return info_record(record)
 
 
 @router.get("/files/{file_id}/measurements/")
-def get_measurements(file_id: str, db: Database = Depends(get_db)) -> dict[str, Any]:
-    record = db.get_file(file_id)
+async def get_measurements(file_id: str, db: Database = Depends(get_db)) -> Response:
+    record = await run_in_threadpool(db.get_file, file_id)
     if record is None:
         raise _not_found(file_id)
 
@@ -141,7 +165,9 @@ def get_measurements(file_id: str, db: Database = Depends(get_db)) -> dict[str, 
             detail=f"file is {record['status']}; retry after it reaches COMPLETED",
         )
 
-    payload = db.get_measurements(file_id)
-    if payload is None:
+    document = await run_in_threadpool(db.get_measurements_document, file_id)
+    if document is None:
         raise HTTPException(status_code=409, detail="measurements are not stored yet")
-    return payload
+    # Served as stored bytes: no parse and re-serialise of a document that can reach
+    # tens of megabytes on every request.
+    return Response(content=document, media_type="application/json")

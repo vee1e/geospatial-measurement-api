@@ -69,28 +69,42 @@ def test_one_bad_feature_does_not_sink_the_file(client, wait_for_completion):
 
     # A polygon ring with two points cannot become a geometry: reported, not raised.
     assert features["bad-ring"]["supported"] is False
-    assert features["bad-ring"]["reason"] or features["bad-ring"]["error"]
+    assert features["bad-ring"]["measurement"] is None
+    assert features["bad-ring"]["reason"] == "feature has no geometry"
 
     # A mixed MultiGeometry (GeometryCollection) is unsupported but still listed.
     assert features["mixed"]["geometry_type"] == "GeometryCollection"
     assert features["mixed"]["supported"] is False
     assert features["mixed"]["measurement"] is None
+    assert features["mixed"]["reason"] == "geometry type is not measurable"
 
     # The healthy feature still measures.
     good = features["good"]
     assert good["supported"] is True
     assert good["measurement"]["unit"] == "m"
-    assert payload["summary"]["failed"] + payload["summary"]["unsupported"] >= 2
-    assert payload["summary"]["measured"] >= 1
+    assert payload["summary"]["measured"] == 1
+    assert payload["summary"]["unsupported"] == 2
+    assert payload["summary"]["failed"] == 0
 
 
 def test_summary_totals_only_count_measured_features(client, wait_for_completion):
     payload = _measurements(client, wait_for_completion, "survey.kml", POLYGON_KML.encode())
     summary = payload["summary"]
 
+    def total(unit: str) -> float:
+        return sum(
+            feature["measurement"]["value"]
+            for feature in payload["features"]
+            if feature["measurement"] and feature["measurement"]["unit"] == unit
+        )
+
+    # Totals must equal the sum over the listed features exactly: a feature counted
+    # twice, or an unsupported one leaking in, breaks this.
+    assert summary["total_area_m2"] == pytest.approx(total("m2"), rel=1e-9)
+    assert summary["total_length_m"] == pytest.approx(total("m"), rel=1e-9)
+
     polygon_area = payload["features"][0]["measurement"]["value"]
     line_length = payload["features"][1]["measurement"]["value"]
-
     assert summary["total_area_m2"] == pytest.approx(polygon_area, rel=1e-6)
     assert summary["total_length_m"] == pytest.approx(line_length, rel=1e-6)
     assert summary["total_area_km2"] == pytest.approx(polygon_area / 1e6, rel=1e-6)

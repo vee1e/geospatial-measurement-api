@@ -73,7 +73,7 @@ async function send(file) {
     const response = await fetch(`${API}/files/`, { method: "POST", body });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(typeof payload.detail === "string" ? payload.detail : "upload failed");
+      throw new Error(describeError(payload));
     }
     created = payload;
   } catch (error) {
@@ -83,7 +83,22 @@ async function send(file) {
 
   showStatus(created, "Queued for processing…", false, true);
   const record = await poll(created.id);
-  if (!record) return;
+  if (!record) {
+    showStatus(
+      { ...created, status: "FAILED" },
+      "Lost contact with the API while processing. Refresh and try again.",
+      true
+    );
+    return;
+  }
+  if (record.status === "TIMED_OUT") {
+    showStatus(
+      { ...created, status: "FAILED" },
+      "Still processing after 90 seconds. The file id is below; retry the measurements endpoint.",
+      true
+    );
+    return;
+  }
 
   if (record.status === "FAILED") {
     showStatus(record, record.error || "Processing failed.", true);
@@ -95,12 +110,21 @@ async function send(file) {
     const response = await fetch(`${API}/files/${record.id}/measurements/`);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(typeof payload.detail === "string" ? payload.detail : "request failed");
+      throw new Error(describeError(payload));
     }
     renderMeasurements(payload);
   } catch (error) {
     showStatus(record, error.message, true);
   }
+}
+
+function describeError(payload) {
+  if (typeof payload.detail === "string") return payload.detail;
+  if (payload.detail) {
+    const { message, error } = payload.detail;
+    return [message, error].filter(Boolean).join(": ");
+  }
+  return payload.message || "request failed";
 }
 
 async function poll(fileId, timeoutMs = 90_000) {
@@ -113,7 +137,7 @@ async function poll(fileId, timeoutMs = 90_000) {
     showStatus(record, "Reading features and measuring…", false, true);
     await new Promise((resolve) => setTimeout(resolve, 400));
   }
-  return null;
+  return { status: "TIMED_OUT" };
 }
 
 // --- rendering --------------------------------------------------------------

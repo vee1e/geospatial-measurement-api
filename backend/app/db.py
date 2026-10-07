@@ -1,8 +1,8 @@
 """SQLite storage.
 
-A thin repository over the standard library's sqlite3. Every process opens its own
-connection per thread (WAL mode lets the reader and the background worker overlap),
-and all statements are parameterised.
+A thin repository over the standard library's sqlite3. Every thread opens its own
+connection (WAL mode lets readers and the background worker overlap), and all values
+are bound as parameters.
 
 Features and measurements are stored as one JSON document per file rather than one row
 per feature: the API only ever serves them together with the file they came from, and a
@@ -73,43 +73,44 @@ class Database:
         )
 
     def set_status(self, file_id: str, status: str, **fields: Any) -> None:
-        allowed = {
-            "crs",
-            "crs_assumed",
-            "calculation_crs",
-            "feature_count",
-            "error",
-            "completed_at",
-        }
-        unknown = set(fields) - allowed
-        if unknown:
-            raise ValueError(f"unexpected columns: {sorted(unknown)}")
-        assignments = ", ".join(f"{key} = :{key}" for key in fields)
-        sql = (
-            "UPDATE files SET status = :status"
-            + (f", {assignments}" if assignments else "")
-            + " WHERE id = :id"
+        assignments = "".join(f", {key} = :{key}" for key in fields)
+        self.connection.execute(
+            f"UPDATE files SET status = :status{assignments} WHERE id = :id",
+            {"id": file_id, "status": status, **fields},
         )
-        self.connection.execute(sql, {"id": file_id, "status": status, **fields})
 
     def get_file(self, file_id: str) -> dict[str, Any] | None:
         row = self.connection.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
         return dict(row) if row else None
 
-    def list_files(self, limit: int = 50) -> list[dict[str, Any]]:
-        rows = self.connection.execute(
-            "SELECT * FROM files ORDER BY created_at DESC LIMIT ?", (limit,)
-        ).fetchall()
-        return [dict(row) for row in rows]
-
     def save_measurements(self, file_id: str, payload: dict[str, Any]) -> None:
+        # allow_nan=False: a NaN or Infinity in the document would produce JSON that
+        # strict parsers reject.
+        document = json.dumps(payload, separators=(",", ":"), allow_nan=False)
         self.connection.execute(
             "INSERT OR REPLACE INTO measurements (file_id, payload) VALUES (?, ?)",
-            (file_id, json.dumps(payload, separators=(",", ":"))),
+            (file_id, document),
         )
 
-    def get_measurements(self, file_id: str) -> dict[str, Any] | None:
+    def get_measurements_document(self, file_id: str) -> str | None:
+        """Raw JSON text, so the endpoint can serve it without parsing it back."""
         row = self.connection.execute(
             "SELECT payload FROM measurements WHERE file_id = ?", (file_id,)
         ).fetchone()
-        return json.loads(row["payload"]) if row else None
+        return row["payload"] if row else None
+
+    def stranded_file_ids(self) -> list[str]:
+        """Records left mid-flight by a previous process, for replay on startup."""
+        rows = self.connection.execute(
+            "SELECT id FROM files WHERE status IN ('PENDING', 'PROCESSING')"
+        ).fetchall()
+        return [row["id"] for row in rows]
+
+    def expired_records(self, before_iso: str) -> list[dict[str, str]]:
+        rows = self.connection.execute(
+            "SELECT id, stored_path FROM files WHERE created_at < ?", (before_iso,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_file(self, file_id: str) -> None:
+        self.connection.execute("DELETE FROM files WHERE id = ?", (file_id,))

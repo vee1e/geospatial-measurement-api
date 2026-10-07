@@ -9,7 +9,8 @@ from .conftest import EMPTY_KML, POLYGON_KML, upload, write_shapefile_zip
 
 def test_upload_returns_pending_then_completes(client, wait_for_completion):
     created = upload(client, "survey.kml", POLYGON_KML.encode())
-    assert created["status"] == "PENDING"
+    # The worker thread may pick the record up before the response is inspected.
+    assert created["status"] in {"PENDING", "PROCESSING"}
     assert created["filename"] == "survey.kml"
     assert created["format"] == "KML"
 
@@ -17,7 +18,7 @@ def test_upload_returns_pending_then_completes(client, wait_for_completion):
     assert record["status"] == "COMPLETED", record["error"]
     assert record["feature_count"] == 3
     assert record["crs"] == "EPSG:4326"
-    assert record["crs_assumed"] is True  # KML has no CRS declaration of its own
+    assert record["crs_assumed"] is False  # KML is WGS 84 by specification
     assert record["calculation_crs"] == "EPSG:32631"  # UTM zone 31N, chosen from the extent
 
 
@@ -106,12 +107,11 @@ def test_measurements_are_unavailable_while_pending(client, monkeypatch):
     monkeypatch.undo()
 
 
-def test_kml_with_no_placemarks_is_rejected(client):
-    response = client.post(
-        "/api/files/", files={"file": ("empty.kml", EMPTY_KML.encode(), "application/xml")}
-    )
-    # Rejected either at upload (format known) or during processing, never silently.
-    assert response.status_code in {202, 415}
+def test_kml_with_no_placemarks_fails_the_record(client, wait_for_completion):
+    created = upload(client, "empty.kml", EMPTY_KML.encode())
+    record = wait_for_completion(created["id"])
+    assert record["status"] == "FAILED"
+    assert "no placemarks" in record["error"]
 
 
 def test_shapefile_zip_roundtrip(client, wait_for_completion, tmp_path):
@@ -140,12 +140,9 @@ def test_shapefile_without_prj_is_flagged_as_assumed(client, wait_for_completion
     assert record["crs"] == "EPSG:4326"
 
 
-def test_file_list_returns_recent_uploads(client):
-    response = client.get("/api/files/")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["count"] == len(body["files"])
-    assert all("id" in item and "status" in item for item in body["files"])
+def test_file_listing_is_not_exposed(client):
+    """No endpoint enumerates other people's uploads: 405, not a list of records."""
+    assert client.get("/api/files/").status_code == 405
 
 
 def test_health(client):

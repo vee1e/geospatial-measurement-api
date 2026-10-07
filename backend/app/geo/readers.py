@@ -13,14 +13,20 @@ format arrived.
 from __future__ import annotations
 
 import io
+import math
 import zipfile
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from xml.etree import ElementTree as ET
 
 import shapefile  # pyshp
+from pyproj import CRS
 
 from ..config import Settings
+
+# KML is defined to use WGS 84 longitude/latitude. Declared outright rather than left
+# to the assumed-CRS path, so `crs_assumed` stays false for KML.
+KML_CRS_WKT = CRS.from_epsg(4326).to_wkt()
 
 
 class FileRejected(Exception):
@@ -31,14 +37,12 @@ class FileRejected(Exception):
 class SourceFeature:
     geometry: dict | None
     properties: dict = field(default_factory=dict)
-    geometry_type: str = "Unknown"
 
 
 @dataclass
 class SourceLayer:
     features: list[SourceFeature]
     crs_wkt: str | None
-    source_format: str
     notes: list[str] = field(default_factory=list)
 
 
@@ -46,7 +50,7 @@ def detect_format(filename: str) -> str:
     lowered = filename.lower()
     if lowered.endswith(".zip"):
         return "SHAPEFILE"
-    if lowered.endswith(".kml"):
+    if lowered.lower().endswith(".kml"):
         return "KML"
     raise FileRejected(
         f"unsupported file type '{Path(filename).suffix or filename}'. "
@@ -54,10 +58,23 @@ def detect_format(filename: str) -> str:
     )
 
 
+def has_valid_magic(filename: str, head: bytes) -> bool:
+    """Cheap content check so a text file named survey.zip is refused at upload."""
+    kind = detect_format(filename)
+    if kind == "SHAPEFILE":
+        return head.startswith(b"PK\x03\x04")
+    return b"<" in head[:512]  # an XML prolog or a root element
+
+
+def _is_junk_entry(name: str) -> bool:
+    """Finder writes __MACOSX/._file entries that must not count as real files."""
+    parts = PurePosixPath(name).parts
+    return "__MACOSX" in parts or PurePosixPath(name).name.startswith("._")
+
+
 def read_layer(path: Path, filename: str, settings: Settings) -> SourceLayer:
     """Parse an uploaded file. Raises FileRejected for anything unusable."""
-    source_format = detect_format(filename)
-    if source_format == "SHAPEFILE":
+    if detect_format(filename) == "SHAPEFILE":
         return _read_shapefile_zip(path, settings)
     return _read_kml(path)
 
@@ -85,7 +102,11 @@ def _read_shapefile_zip(path: Path, settings: Settings) -> SourceLayer:
                 f"limit is {settings.max_zip_uncompressed_bytes}"
             )
 
-        shp_names = [i.filename for i in infos if i.filename.lower().endswith(".shp")]
+        shp_names = [
+            info.filename
+            for info in infos
+            if info.filename.lower().endswith(".shp") and not _is_junk_entry(info.filename)
+        ]
         if not shp_names:
             raise FileRejected("zip archive does not contain a .shp file")
         if len(shp_names) > 1:
@@ -94,14 +115,25 @@ def _read_shapefile_zip(path: Path, settings: Settings) -> SourceLayer:
                 f"{len(shp_names)} shapefiles ({', '.join(shp_names)}); one per upload"
             )
 
-        base = shp_names[0][:-4].lower()
+        shp_path = PurePosixPath(shp_names[0])
+        base = shp_path.stem.lower()
 
         def sidecar(suffix: str) -> bytes | None:
+            """Find a sidecar next to the .shp first, then anywhere in the archive."""
+            same_dir: bytes | None = None
+            anywhere: bytes | None = None
             for info in infos:
-                name = info.filename.lower()
-                if name.endswith(suffix) and name[: -len(suffix)] == base:
-                    return archive.read(info)
-            return None
+                name = PurePosixPath(info.filename)
+                if _is_junk_entry(info.filename) or name.suffix.lower() != suffix:
+                    continue
+                if name.stem.lower() != base:
+                    continue
+                if name.parent == shp_path.parent:
+                    same_dir = archive.read(info)
+                    break
+                if anywhere is None:
+                    anywhere = archive.read(info)
+            return same_dir if same_dir is not None else anywhere
 
         shp_bytes = archive.read(shp_names[0])
         dbf = sidecar(".dbf")
@@ -110,13 +142,25 @@ def _read_shapefile_zip(path: Path, settings: Settings) -> SourceLayer:
 
     if prj_bytes is None:
         notes.append("no .prj sidecar found; source CRS will be assumed")
+    if dbf is None:
+        notes.append("no .dbf sidecar found; attributes will be empty")
 
     return SourceLayer(
         features=_read_shapefile_records(shp_bytes, dbf, shx),
         crs_wkt=prj_bytes.decode("utf-8", errors="replace") if prj_bytes else None,
-        source_format="SHAPEFILE",
         notes=notes,
     )
+
+
+def _clean_attribute(value):
+    """DBF fields can hold bytes, dates and NaN; JSON cannot hold any of those."""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
 
 
 def _read_shapefile_records(
@@ -132,30 +176,27 @@ def _read_shapefile_records(
     except Exception as exc:
         raise FileRejected(f"could not read shapefile: {exc}") from exc
 
-    fields = [f[0] for f in reader.fields[1:]]  # skip the deletion-flag field
     features: list[SourceFeature] = []
     with reader:
+        if dbf is None:
+            # A geometry-only Shapefile is a normal export; pyshp reads it fine.
+            for shape in reader.shapes():
+                features.append(SourceFeature(geometry=_geo_interface(shape), properties={}))
+            return features
+
+        fields = [f[0] for f in reader.fields[1:]]  # skip the deletion-flag field
         for record in reader.shapeRecords():
-            clean: dict = {}
-            for key, value in zip(fields, record.record, strict=False):
-                if isinstance(value, bytes):
-                    clean[key] = value.decode("utf-8", errors="replace")
-                elif isinstance(value, (str, int, float, bool)) or value is None:
-                    clean[key] = value
-                else:
-                    clean[key] = str(value)  # dates and anything else JSON cannot hold
-            try:
-                geo = record.shape.__geo_interface__
-            except Exception:
-                geo = None  # a corrupt shape must not sink the whole file
-            features.append(
-                SourceFeature(
-                    geometry=geo,
-                    properties=clean,
-                    geometry_type=(geo or {}).get("type", "Null"),
-                )
-            )
+            pairs = zip(fields, record.record, strict=False)
+            props = {key: _clean_attribute(value) for key, value in pairs}
+            features.append(SourceFeature(geometry=_geo_interface(record.shape), properties=props))
     return features
+
+
+def _geo_interface(shape) -> dict | None:
+    try:
+        return shape.__geo_interface__
+    except Exception:
+        return None  # a corrupt shape must not sink the whole file
 
 
 # --- KML -----------------------------------------------------------------------
@@ -169,10 +210,6 @@ def _children(element, name: str) -> list:
     return [child for child in element if _local(child.tag) == name]
 
 
-def _descendants(element, name: str) -> list:
-    return [node for node in element.iter() if node is not element and _local(node.tag) == name]
-
-
 def _child_text(element, name: str) -> str | None:
     for child in element:
         if _local(child.tag) == name:
@@ -180,7 +217,7 @@ def _child_text(element, name: str) -> str | None:
     return None
 
 
-def _parse_coordinates(text: str) -> list[tuple[float, ...]]:
+def _parse_coordinates(text: str | None) -> list[tuple[float, ...]]:
     points: list[tuple[float, ...]] = []
     for chunk in (text or "").split():
         parts = chunk.split(",")
@@ -194,22 +231,14 @@ def _parse_coordinates(text: str) -> list[tuple[float, ...]]:
     return points
 
 
-def _coordinates_element(element, name: str) -> str | None:
-    """Return the text of a direct `coordinates` child, namespace or not."""
-    for child in element:
-        if _local(child.tag) == name:
-            return child.text
-    return None
-
-
 def _geometry_from_kml(element) -> dict | None:
     """Turn a KML geometry element into a GeoJSON geometry mapping."""
     kind = _local(element.tag)
     if kind == "Point":
-        coords = _parse_coordinates(_coordinates_element(element, "coordinates") or "")
+        coords = _parse_coordinates(_child_text(element, "coordinates"))
         return {"type": "Point", "coordinates": coords[0][:2]} if coords else None
     if kind == "LineString":
-        coords = _parse_coordinates(_coordinates_element(element, "coordinates") or "")
+        coords = _parse_coordinates(_child_text(element, "coordinates"))
         if len(coords) < 2:
             return None
         return {"type": "LineString", "coordinates": [c[:2] for c in coords]}
@@ -217,7 +246,7 @@ def _geometry_from_kml(element) -> dict | None:
         outer = None
         for boundary in _children(element, "outerBoundaryIs"):
             for ring in _children(boundary, "LinearRing"):
-                outer = _coordinates_element(ring, "coordinates")
+                outer = _child_text(ring, "coordinates")
         if outer is None:
             return None
         shell = [c[:2] for c in _parse_coordinates(outer)]
@@ -226,8 +255,7 @@ def _geometry_from_kml(element) -> dict | None:
         rings = [shell]
         for boundary in _children(element, "innerBoundaryIs"):
             for ring in _children(boundary, "LinearRing"):
-                text = _coordinates_element(ring, "coordinates")
-                hole = [c[:2] for c in _parse_coordinates(text or "")]
+                hole = [c[:2] for c in _parse_coordinates(_child_text(ring, "coordinates"))]
                 if len(hole) >= 3:
                     rings.append(hole)
         return {"type": "Polygon", "coordinates": rings}
@@ -275,8 +303,12 @@ def _read_kml(path: Path) -> SourceLayer:
         raise FileRejected(f"could not read file: {exc}") from exc
 
     root = tree.getroot()
+    placemarks = [node for node in root.iter() if _local(node.tag) == "Placemark"]
+    if not placemarks:
+        raise FileRejected("KML contains no placemarks")
+
     features: list[SourceFeature] = []
-    for placemark in _descendants(root, "Placemark"):
+    for placemark in placemarks:
         geom_element = None
         for child in placemark:
             if _local(child.tag) in {"Point", "LineString", "Polygon", "MultiGeometry"}:
@@ -284,13 +316,7 @@ def _read_kml(path: Path) -> SourceLayer:
                 break
         geometry = _geometry_from_kml(geom_element) if geom_element is not None else None
         features.append(
-            SourceFeature(
-                geometry=geometry,
-                properties=_properties_from_placemark(placemark),
-                geometry_type=(geometry or {}).get("type", "Null"),
-            )
+            SourceFeature(geometry=geometry, properties=_properties_from_placemark(placemark))
         )
 
-    if not features:
-        raise FileRejected("KML contains no placemarks")
-    return SourceLayer(features=features, crs_wkt=None, source_format="KML")
+    return SourceLayer(features=features, crs_wkt=KML_CRS_WKT)

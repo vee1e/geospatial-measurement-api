@@ -47,9 +47,15 @@ Caddy site block, appended to `/srv/personal-apps/Caddyfile`:
 
 ```
 geo-api.lverma.com {
+    request_body {
+        max_size 26MB
+    }
     reverse_proxy geoapi:8000
 }
 ```
+
+`request_body` refuses oversized uploads at the edge, before the body reaches the
+container. The API enforces the same limit in process as well, for direct access.
 
 Reloading Caddy without dropping the other sites:
 
