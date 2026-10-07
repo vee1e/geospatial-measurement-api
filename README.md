@@ -277,9 +277,9 @@ Coverage of the required paths:
 Frontend on Vercel, backend on a VPS behind Caddy. Steps, DNS records and the Caddy block are in [docs/deployment.md](docs/deployment.md).
 
 ```bash
-# backend
-ssh lakshit 'cd /srv/geoapi && git pull && docker compose up -d --build'
-# frontend
+# backend, on the VPS
+cd /srv/geoapi && ./deploy.sh
+# frontend, locally
 cd frontend && vercel deploy --prod
 ```
 
