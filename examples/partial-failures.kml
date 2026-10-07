@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+<Placemark><name>broken-ring</name><Polygon><outerBoundaryIs><LinearRing><coordinates>77.20,28.61 77.21,28.62</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+<Placemark><name>mixed</name><MultiGeometry><Point><coordinates>77.2050,28.6150</coordinates></Point><Polygon><outerBoundaryIs><LinearRing><coordinates>77.2,28.61 77.21,28.61 77.21,28.62 77.2,28.62 77.2,28.61</coordinates></LinearRing></outerBoundaryIs></Polygon></MultiGeometry></Placemark>
+<Placemark><name>healthy</name><LineString><coordinates>77.2000,28.6100 77.2100,28.6100</coordinates></LineString></Placemark>
+</Document></kml>
