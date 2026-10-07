@@ -258,6 +258,10 @@ uv run pytest          # 31 tests, about a second
 uv run ruff check .    # lint
 ```
 
+[examples/](examples/) holds nine ready-made files to try by hand, one per behaviour worth
+checking (a foot-based projection, a Finder zip, a file with no `.prj`, an antimeridian
+run, and so on).
+
 Coverage of the required paths:
 
 | Requirement | Test |
