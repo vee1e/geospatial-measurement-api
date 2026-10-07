@@ -24,6 +24,29 @@ MAX_FILENAME_LENGTH = 200
 CHUNK_BYTES = 1024 * 1024
 
 
+class _UploadTooLarge(Exception):
+    """Raised inside the write loop when the byte limit is crossed.
+
+    Raised before the over-limit chunk hits the disk, so a request with no honest
+    Content-Length cannot fill the data directory.
+    """
+
+    def __init__(self, seen_bytes: int) -> None:
+        super().__init__(seen_bytes)
+        self.seen_bytes = seen_bytes
+
+
+def _etag_matches(header: str | None, etag: str) -> bool:
+    """If-None-Match comparison for GET: weak and strong forms match (`*` too)."""
+    if not header:
+        return False
+    for candidate in header.split(","):
+        candidate = candidate.strip()
+        if candidate == "*" or candidate.removeprefix("W/") == etag:
+            return True
+    return False
+
+
 def get_db(request: Request) -> Database:
     return request.app.state.db
 
@@ -68,11 +91,18 @@ def health(request: Request) -> dict[str, str]:
 
 
 async def _save_in_chunks(file: UploadFile, destination: Path) -> int:
-    """Copy the spooled upload to disk in chunks, so the whole file is never in RAM."""
+    """Copy the spooled upload to disk in chunks, so the whole file is never in RAM.
+
+    The limit is checked on every chunk instead of after the loop, so the destination
+    never holds more than the limit even if Content-Length lied.
+    """
     written = 0
+    limit = settings.max_upload_bytes
     with destination.open("wb") as handle:
         while chunk := await file.read(CHUNK_BYTES):
             written += len(chunk)
+            if written > limit:
+                raise _UploadTooLarge(written)
             await run_in_threadpool(handle.write, chunk)
     return written
 
@@ -110,14 +140,15 @@ async def upload_file(
     suffix = Path(filename).suffix.lower()
     destination = settings.data_dir / "uploads" / f"{file_id}{suffix}"
     destination.parent.mkdir(parents=True, exist_ok=True)
-    written = await _save_in_chunks(file, destination)
-
-    if written > settings.max_upload_bytes:
+    try:
+        written = await _save_in_chunks(file, destination)
+    except _UploadTooLarge as exc:
         destination.unlink(missing_ok=True)
         raise HTTPException(
             status_code=413,
-            detail=f"file is {written} bytes, limit is {settings.max_upload_bytes}",
-        )
+            detail=f"file exceeds the {settings.max_upload_bytes} byte limit "
+            f"(stopped at {exc.seen_bytes} bytes)",
+        ) from exc
 
     record = {
         "id": file_id,
@@ -143,7 +174,9 @@ async def get_file(file_id: str, db: Database = Depends(get_db)) -> dict[str, An
 
 
 @router.get("/files/{file_id}/measurements/")
-async def get_measurements(file_id: str, db: Database = Depends(get_db)) -> Response:
+async def get_measurements(
+    file_id: str, request: Request, db: Database = Depends(get_db)
+) -> Response:
     record = await run_in_threadpool(db.get_file, file_id)
     if record is None:
         raise _not_found(file_id)
@@ -159,9 +192,21 @@ async def get_measurements(file_id: str, db: Database = Depends(get_db)) -> Resp
             detail=f"file is {record['status']}; retry after it reaches COMPLETED",
         )
 
+    # The document cannot change once the record is COMPLETED, so a repeat fetch is
+    # answered with validators instead of the payload. Checked before the document is
+    # read: a 304 never touches the stored JSON. Errors above run first, so a
+    # 409/422 response carries no validators and stays uncached.
+    etag = f'"{file_id}"'
+    headers = {
+        "ETag": etag,
+        "Cache-Control": "private, max-age=31536000, immutable",
+    }
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+
     document = await run_in_threadpool(db.get_measurements_document, file_id)
     if document is None:
         raise HTTPException(status_code=409, detail="measurements are not stored yet")
     # Served as stored bytes: no parse and re-serialise of a document that can reach
     # tens of megabytes on every request.
-    return Response(content=document, media_type="application/json")
+    return Response(content=document, media_type="application/json", headers=headers)

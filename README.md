@@ -10,6 +10,7 @@ Live at https://geo.lverma.com, API at https://geo-api.lverma.com.
 - [API](#api)
 - [Architecture](#architecture)
 - [Design decisions](#design-decisions)
+- [Performance](#performance)
 - [Tests](#tests)
 - [Deployment](#deployment)
 - [Learning and future scope](#learning-and-future-scope)
@@ -84,7 +85,7 @@ Rejected uploads:
 | `415` | Not a `.zip` or `.kml`, or the bytes do not match the extension (text named `fake.zip`) |
 | `422` | No `file` field in the multipart body (FastAPI validation) |
 
-The size cap is enforced twice: by Caddy at the edge (`request_body { max_size }`) and again by an in-process check before the multipart parser runs, so an oversized body is never buffered.
+The size cap is enforced twice: by Caddy at the edge (`request_body { max_size }`) and again by an in-process check before the multipart parser runs, so an oversized body is never buffered. The write loop checks the limit on every chunk as well, so a chunked request with no `Content-Length` stops writing at the cap instead of filling the data directory.
 
 ### GET /api/files/{id}/
 
@@ -169,6 +170,8 @@ Either way the rest of the file still completes.
 | `409` | Still `PENDING` or `PROCESSING`; try again shortly |
 | `422` | The file finished as `FAILED`; `detail.error` says why |
 
+A `200` from this endpoint carries `ETag` and `Cache-Control: private, max-age=31536000, immutable`, because a completed document never changes. Send the `ETag` back in `If-None-Match` and a repeat fetch gets `304` with no body, answered before the document is read from SQLite. The `409`/`422`/`404` responses above carry no validators, so nothing caches them.
+
 ### GET /api/health/
 
 `{"status": "ok"}`, or `503` while the processing worker is down. Used by the container
@@ -186,12 +189,13 @@ geospatial-measurement-api/
 │   │   ├── config.py        settings read from the environment
 │   │   ├── db.py            SQLite schema and repository
 │   │   ├── pipeline.py      read → reproject → measure → store
-│   │   ├── worker.py        background queue, one thread
+│   │   ├── worker.py        background queue, dispatcher thread, process pool
 │   │   └── geo/
-│   │       ├── readers.py   Shapefile and KML parsing
+│   │       ├── readers.py   Shapefile and KML parsing, bounds during the read
 │   │       ├── crs.py       CRS resolution and projection choice
 │   │       └── measure.py   measurement rules, per feature
-│   ├── tests/               31 tests over the API, the measurements, and edge cases
+│   ├── tests/               45 tests over the API, the measurements, and edge cases
+│   ├── bench/               benchmark harness; BASELINE.md and FINAL.md are the reports
 │   └── Dockerfile
 ├── frontend/                Vite site, no framework
 ├── compose.yaml
@@ -201,9 +205,9 @@ geospatial-measurement-api/
 ### File-processing flow
 
 1. `POST /api/files/` checks the extension, size and name, writes the bytes to `data/uploads/{id}.{ext}`, inserts a row with status `PENDING`, and pushes the id onto a queue. The response goes out immediately.
-2. A worker thread takes the id, sets `PROCESSING`, and parses the file. A zip must contain exactly one `.shp` plus its sidecars; a KML is parsed with the standard library's XML parser.
-3. The parser returns a list of features in the same shape for both formats, so nothing downstream knows which format arrived.
-4. The pipeline resolves the source coordinate system, picks one projected coordinate system for the whole file, measures each feature, and writes one JSON document.
+2. A dispatcher thread takes the id, sets `PROCESSING`, and hands the file to a pool of worker processes (`GEO_WORKER_PROCESSES`, default 2; `1` runs it inline on the dispatcher thread instead). Each process parses the file: a zip must contain exactly one `.shp` plus its sidecars, a KML is parsed with the standard library's XML parser.
+3. The parser returns a list of features in the same shape for both formats, and folds the layer extent in as it reads, so nothing downstream knows which format arrived and no second pass over the coordinates is needed.
+4. The pipeline resolves the source coordinate system, picks one projected coordinate system for the whole file, transforms the whole layer through pyproj in one call, measures each feature, and writes one JSON document.
 5. Status becomes `COMPLETED`, or `FAILED` with the error message when the file itself is unusable.
 
 ### Measurement flow
@@ -215,7 +219,9 @@ Every feature passes through `geo/measure.py`, which returns a result object and
 - Point, MultiPoint → reported with a reason and no value
 - Anything else → reported as not measurable
 
-A feature that throws (bad ring, failed reprojection) produces an `error` field on that feature and the loop continues.
+Area and length come from walking the coordinate arrays directly: the shoelace formula over each ring (shell minus holes) and the sum of segment lengths, after the layer was transformed to the projected CRS in one batched pyproj call. A feature that throws (bad ring, failed reprojection) produces an `error` field on that feature and the loop continues.
+
+The `warnings` list stays in the payload but is always empty: the old self-intersection caveat needed a full geometry validity test per feature, and skipping it is where most of the measurement speedup came from.
 
 ### CRS handling
 
@@ -236,11 +242,17 @@ Worked example: a 0.01° by 0.01° square near Delhi is projected to EPSG:32643 
 
 **Background worker instead of measuring inside the POST.** Parsing and reprojecting a large layer takes seconds. Holding the request open for that ties client timeouts to file size, and a dropped connection would waste the work. The trade-off: the client polls, so the status endpoint matters. See [docs/design-decisions.md](docs/design-decisions.md) for the alternatives.
 
+**A process pool behind the dispatcher, not threads.** The pipeline is CPU-bound Python, so threads in one process only fight over the GIL (measured: 8 files in 4 threads took 0.69 s against 0.44 s in one thread). One dispatcher thread drains the queue as before and submits each file once to a pool of processes; 8 files that took 0.532 s in a single worker take 0.145 s in a 4-process pool, and a 25 MB upload drops from 170.9 ms to 62.9 ms because parsing left the serving process. `GEO_WORKER_PROCESSES` sets the size, default 2; `1` keeps the old single inline worker.
+
 **SQLite plus a thin repository, not an ORM.** Two tables, mostly reads. `sqlite3` in WAL mode handles concurrent reads while the worker writes. An ORM would add a mapping layer with nothing to map. Every statement is parameterised.
 
-**Measurements stored as one JSON document per file.** The API always serves them with the file they came from, so one document means one query per request. Storing one row per feature would help only if features were queried alone, which nothing does.
+**Measurements stored as one JSON document per file.** The API always serves them with the file they came from, so one document means one query per request. Storing one row per feature would help only if features were queried alone, which nothing does. The document cannot change once the record is `COMPLETED`, so the endpoint serves the stored bytes with an `ETag` and `Cache-Control` header, and a repeat fetch with `If-None-Match` gets a `304` that returns before the SQLite document is read: 158 wire bytes instead of 3 MB.
 
-**pyshp plus pyproj plus shapely, no GDAL.** GDAL is the standard tool and reads more formats, but its wheels and system libraries make the image several hundred megabytes and the build slower. pyshp reads Shapefiles, pyproj handles coordinate maths, shapely does the geometry. The image is 410 MB as reported by `docker images` (290 MB unpacked). The cost: no GeoJSON, GeoPackage or raster support yet.
+**pyshp plus pyproj, no GDAL and no geometry library.** GDAL is the standard tool and reads more formats, but its wheels and system libraries make the image several hundred megabytes and the build slower. pyshp reads Shapefiles, pyproj handles coordinate maths, and the measurements are computed straight from the GeoJSON coordinate arrays (shoelace for area, segment sums for length), so shapely is not needed at all. The image is 329 MB as reported by `docker images`, 81 MB smaller than the 410 MB it was when shapely and numpy rode along. The cost: no GeoJSON, GeoPackage or raster support yet.
+
+**The whole layer transforms in one pyproj call.** Coordinates are flattened, pushed through `Transformer.transform` once per file, and rebuilt into the geometry copies the measurements read. Per-geometry transforms did the same work hundreds of times; batched, `Projector.prepare` is one call and the measurement loop never touches pyproj again.
+
+**Layer extent gathered while reading.** The projection choice needs the file's extent, which used to mean a second walk over every coordinate array after parsing. The readers now fold min/max in as they parse (four compares per accepted coordinate block, and only for geometries that were actually accepted), so the pipeline reads the extent off the layer instead of recomputing it.
 
 **KML parsed with `xml.etree`.** KML is a small, flat format. A dependency-free parser handles placemarks, polygons with holes, and `MultiGeometry`, and it treats a missing namespace the way some exporters write it.
 
@@ -250,11 +262,27 @@ Worked example: a 0.01° by 0.01° square near Delhi is projected to EPSG:32643 
 
 **No authentication.** This is a scoped assignment service. Rate limiting, quotas and signed URLs would be the next step before wider use.
 
+## Performance
+
+Measured with the harness in [backend/bench/](backend/bench/) on the machine listed in [bench/BASELINE.md](backend/bench/BASELINE.md): same fixtures, same protocol, best-of-5 medians. The baseline is the pre-optimisation profile, the final numbers are in [bench/FINAL.md](backend/bench/FINAL.md), which also carries every median delta.
+
+End to end, upload to status `COMPLETED` over HTTP:
+
+| fixture | baseline | final | change |
+| --- | ---: | ---: | ---: |
+| `kml_1000` | 0.061 s | 0.030 s | −50.8% |
+| `kml_10000` | 0.579 s | 0.284 s | −50.9% |
+| `shp_1000` | 0.079 s | 0.030 s | −62.2% |
+
+Pipeline only (no HTTP, no polling) over the same three fixtures: 0.056 → 0.030 s (−46.5%), 0.572 → 0.297 s (−48.0%), 0.071 → 0.023 s (−67.2%). Throughput on the 10,000-feature file goes from 17,469 to 33,620 features/s, and its peak RSS from 105.5 MB to 91.1 MB. Every one of those deltas is well outside the noise bands stated in [bench/AB_PIPELINE.md](backend/bench/AB_PIPELINE.md) (±5% on `kml_1000`, ±4% on `kml_10000`, ±11% on `shp_1000`).
+
+Concurrency is the biggest structural change: 8 simultaneous uploads of `kml_1000` took 0.554 s wall against 0.529 s serial (a single worker queue); with the process pool the same 8 take 0.165 s, which is 0.34x the serial time instead of 1.05x.
+
 ## Tests
 
 ```bash
 cd backend
-uv run pytest          # 31 tests, about a second
+uv run pytest          # 45 tests, about two seconds
 uv run ruff check .    # lint
 ```
 
@@ -276,6 +304,8 @@ Coverage of the required paths:
 | CRS handling | `test_shapefile_without_prj_is_flagged_as_assumed`, `test_antimeridian_extent_stays_accurate` |
 | Archives real tools produce | `test_macos_resource_fork_zip_is_accepted`, `test_sidecars_in_another_folder_are_found`, `test_shapefile_without_attributes_completes` |
 | Totals and serialisation | `test_summary_totals_only_count_measured_features`, `test_stored_document_is_strict_json`, `test_nan_attribute_becomes_null` |
+| Caching (`ETag`/`304`) | `test_200_carries_stable_validators`, `test_repeat_fetch_with_matching_etag_gets_304`, `test_conflict_responses_carry_no_validators` |
+| Worker pool and queue | `test_default_opens_a_two_process_pool`, `test_dispatcher_submits_each_file_exactly_once`, `test_pool_completes_several_files` |
 | Enumeration is not exposed | `test_file_listing_is_not_exposed` |
 
 `test_area_is_real_area_not_square_degrees` compares the API's answer against the geodesic area computed by `pyproj.Geod` for the same ring, with a 1% tolerance. That catches a projection mistake rather than only checking that a number exists. `test_projected_source_in_feet_is_converted_to_metres` does the same for a foot-based State Plane file, which would otherwise be off by a factor of 10.76.
@@ -304,6 +334,7 @@ Configuration is read from the environment:
 | `GEO_MAX_FEATURES` | `50000` | Features accepted in one file |
 | `GEO_RETENTION_DAYS` | `7` | Uploads older than this are deleted at startup |
 | `GEO_ASSUMED_CRS` | `EPSG:4326` | Used when a shapefile declares no CRS |
+| `GEO_WORKER_PROCESSES` | `2` | Files processed at once by the worker pool; `1` runs them inline on the dispatcher thread |
 
 Uploads and their rows are removed at startup once they pass the retention window, so the
 volume does not grow without bound. Records stranded by a restart are re-queued at
@@ -319,5 +350,5 @@ What is deliberately missing, in the order it should be added:
 2. **Idempotent uploads.** Hash the file so a re-upload of the same bytes reuses the stored result instead of reprocessing.
 3. **Rate limiting at the proxy.** Retention bounds disk use, but nothing yet bounds how often one caller can upload; a per-IP limit in Caddy is the cheap next step.
 4. **Authentication and rate limiting.** Required before this is open to more than a reviewer.
-5. **A real queue.** One thread is enough for one process. More processes or a shared queue (Redis, RQ) is the step beyond that, and `Processor` is the seam where it would go.
+5. **A real queue.** The dispatcher plus a process pool handles the load inside one container; a shared queue (Redis, RQ) is the step beyond that, and `Processor` is the seam where it would go.
 6. **Geometry simplification for very large layers.** A 50 MB Shapefile with a million features takes seconds to project. Simplifying before measurement would cut that, at the cost of precision, and only where the caller asks for it.

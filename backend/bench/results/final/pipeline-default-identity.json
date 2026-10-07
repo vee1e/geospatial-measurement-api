@@ -1,0 +1,20 @@
+{
+  "origin": "HEAD",
+  "files": [
+    "antimeridian.kml",
+    "broken.kml",
+    "fixture_kml_1000.kml",
+    "fixture_kml_10000.kml",
+    "fixture_shp_1000.zip",
+    "mixed.kml",
+    "shp_feet.zip",
+    "shp_noprj.zip",
+    "shp_null_shape.zip",
+    "shp_prj.zip"
+  ],
+  "identical": false,
+  "differences": [
+    "mixed.kml",
+    "mixed.kml.payload"
+  ]
+}

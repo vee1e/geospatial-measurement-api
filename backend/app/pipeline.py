@@ -10,7 +10,6 @@ A failure inside a single feature only marks that feature.
 from __future__ import annotations
 
 import logging
-import math
 from pathlib import Path
 from typing import Any
 
@@ -25,42 +24,6 @@ log = logging.getLogger("geo.pipeline")
 
 class ProcessingError(Exception):
     """Fatal for this file. The record ends up FAILED."""
-
-
-def _layer_bounds(features) -> tuple[float, float, float, float] | None:
-    """Extent of the layer, read straight from the coordinate arrays.
-
-    Deliberately not done through shapely: this pass runs before the projection is
-    chosen, and building every geometry twice doubles peak memory for no benefit.
-    """
-    minx = miny = float("inf")
-    maxx = maxy = float("-inf")
-    found = False
-
-    def walk(node: Any) -> None:
-        nonlocal minx, miny, maxx, maxy, found
-        if not isinstance(node, (list, tuple)) or not node:
-            return
-        if isinstance(node[0], (int, float)):
-            if len(node) < 2 or not math.isfinite(node[0]) or not math.isfinite(node[1]):
-                return
-            found = True
-            minx, maxx = min(minx, node[0]), max(maxx, node[0])
-            miny, maxy = min(miny, node[1]), max(maxy, node[1])
-            return
-        for child in node:
-            walk(child)
-
-    for feature in features:
-        if not feature.geometry:
-            continue
-        if feature.geometry.get("type") == "GeometryCollection":
-            for part in feature.geometry.get("geometries", []):
-                walk(part.get("coordinates"))
-            continue
-        walk(feature.geometry.get("coordinates"))
-
-    return (minx, miny, maxx, maxy) if found else None
 
 
 def _summarise(results: list[measure_mod.FeatureResult]) -> dict[str, Any]:
@@ -134,12 +97,15 @@ def _build_payload(record: dict[str, Any], settings: Settings) -> dict[str, Any]
         )
 
     source_crs, assumed, source_label = resolve_source_crs(layer.crs_wkt, settings.assumed_crs)
-    bounds = _layer_bounds(layer.features)
-    if bounds is None:
+    # The extent the readers gathered while parsing, four compares per coordinate
+    # block. Walking the coordinate arrays a second time here would do the same work
+    # again for nothing.
+    if layer.bounds is None:
         raise ProcessingError("no feature exposes readable coordinates")
 
-    target = pick_projected_crs(source_crs, bounds)
+    target = pick_projected_crs(source_crs, layer.bounds)
     projector = Projector(source_crs, target)
+    projector.prepare(feature.geometry for feature in layer.features)
 
     results = [
         measure_mod.measure(feature.geometry, projector, index, feature.properties)

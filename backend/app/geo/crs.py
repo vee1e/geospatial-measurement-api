@@ -23,7 +23,6 @@ import math
 from dataclasses import dataclass
 
 from pyproj import CRS, Transformer
-from shapely.ops import transform as shapely_transform
 
 # Latitude range where the UTM system is defined.
 _UTM_MIN_LAT = -80.0
@@ -118,13 +117,82 @@ def pick_projected_crs(source: CRS, bounds: tuple[float, float, float, float]) -
     return ProjectedCRS(CRS.from_proj4(proj4), "LAEA (centred on extent)", "laea")
 
 
+def _iter_coordinate_leaves(node):
+    """Yield every coordinate pair in a nesting of lists, depth first, left to right.
+
+    The same traversal order is used to flatten and to rebuild, so the flat arrays
+    line up with the reconstructed geometry without any bookkeeping.
+    """
+    if isinstance(node, (list, tuple)):
+        if node and isinstance(node[0], (int, float)):
+            yield node
+        else:
+            for child in node:
+                yield from _iter_coordinate_leaves(child)
+
+
+def _iter_geometry_leaves(mapping):
+    """Coordinate leaves of one GeoJSON geometry mapping (nested collections too)."""
+    if not isinstance(mapping, dict):
+        return
+    if "coordinates" in mapping:
+        yield from _iter_coordinate_leaves(mapping["coordinates"])
+    for part in mapping.get("geometries") or ():
+        yield from _iter_geometry_leaves(part)
+
+
+def _rebuild_leaves(node, xs, ys, index):
+    """Return (structure, next_index): a copy of `node` with transformed pairs."""
+    if isinstance(node, (list, tuple)):
+        if node and isinstance(node[0], (int, float)):
+            rebuilt = [xs[index], ys[index]]
+            if len(node) > 2:  # keep a third (z) dimension the transform never touches
+                rebuilt.extend(node[2:])
+            return rebuilt, index + 1
+        out = []
+        for child in node:
+            child_node, index = _rebuild_leaves(child, xs, ys, index)
+            out.append(child_node)
+        return out, index
+    return node, index
+
+
+def _rebuild_geometry(mapping, xs, ys, index=0):
+    """A copy of `mapping` whose coordinate pairs come from the transformed arrays.
+
+    Returns (copy, next_index); the index tracks the same depth-first, left-to-right
+    order the flattening walk used.
+    """
+    if not isinstance(mapping, dict):
+        return mapping, index
+    out = dict(mapping)
+    if "coordinates" in mapping:
+        out["coordinates"], index = _rebuild_leaves(mapping["coordinates"], xs, ys, index)
+    if "geometries" in mapping:
+        geometries = []
+        for part in mapping["geometries"]:
+            part, index = _rebuild_geometry(part, xs, ys, index)
+            geometries.append(part)
+        out["geometries"] = geometries
+    return out, index
+
+
 class Projector:
-    """Transforms geometries from the source CRS into the measurement CRS."""
+    """Transforms geometries from the source CRS into the measurement CRS.
+
+    The whole layer's coordinates are pushed through pyproj in one call by
+    `prepare()` before measurement starts; `prepared_mapping()` hands each feature
+    its already-transformed copy. When the batch call fails (or one geometry cannot
+    be rebuilt), that feature falls back to a transform of its own through
+    `project_xy`, so one bad layer never fails the file.
+    """
 
     def __init__(self, source: CRS, target: ProjectedCRS) -> None:
         self.source = source
         self.target = target
         self._transformer = Transformer.from_crs(source, target.crs, always_xy=True)
+        # None means prepare() has not run: every geometry transforms on its own.
+        self._prepared: dict[int, dict] | None = None
 
     @property
     def identical(self) -> bool:
@@ -139,7 +207,45 @@ class Projector:
     def area_scale(self) -> float:
         return self.target.unit_to_metre**2
 
-    def project(self, geometry):
+    def prepare(self, mappings) -> None:
+        """Flatten every geometry of the layer, transform once, cache the copies."""
+        live = [mapping for mapping in mappings if mapping]
         if self.identical:
-            return geometry
-        return shapely_transform(lambda x, y, z=None: self._transformer.transform(x, y), geometry)
+            # Nothing to transform; the prepared copy is the original mapping.
+            self._prepared = {id(mapping): mapping for mapping in live}
+            return
+        xs: list[float] = []
+        ys: list[float] = []
+        offsets: list[tuple[dict, int, int]] = []
+        for mapping in live:
+            start = len(xs)
+            for leaf in _iter_geometry_leaves(mapping):
+                xs.append(leaf[0])
+                ys.append(leaf[1])
+            offsets.append((mapping, start, len(xs)))
+        try:
+            tx, ty = self._transformer.transform(xs, ys)
+        except Exception:
+            # One bad layer must not fail the file: drop to per-geometry transforms.
+            self._prepared = None
+            return
+        prepared: dict[int, dict] = {}
+        for mapping, start, end in offsets:
+            try:
+                rebuilt, _ = _rebuild_geometry(mapping, tx[start:end], ty[start:end])
+            except Exception:
+                continue  # leave this geometry out; it transforms the old way
+            prepared[id(mapping)] = rebuilt
+        self._prepared = prepared
+
+    def prepared_mapping(self, mapping):
+        """The already-transformed copy of this mapping, or None when there is none."""
+        if self._prepared is None:
+            return None
+        return self._prepared.get(id(mapping))
+
+    def project_xy(self, xs, ys):
+        """Transform two flat coordinate arrays (per-geometry fallback path)."""
+        if self.identical:
+            return xs, ys
+        return self._transformer.transform(xs, ys)

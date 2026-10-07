@@ -1,0 +1,682 @@
+{
+  "rss_runs": 3,
+  "inproc_reps": 5,
+  "rss": {
+    "kml_100": {
+      "process_s": {
+        "n": 3,
+        "min": 0.00536454189568758,
+        "median": 0.005845915991812944,
+        "max": 0.006245417054742575,
+        "raw": [
+          0.006245417054742575,
+          0.005845915991812944,
+          0.00536454189568758
+        ]
+      },
+      "baseline_rss_bytes": {
+        "n": 3,
+        "min": 40681472,
+        "median": 40812544,
+        "max": 40828928,
+        "raw": [
+          40828928,
+          40812544,
+          40681472
+        ]
+      },
+      "peak_rss_bytes": {
+        "n": 3,
+        "min": 41304064,
+        "median": 41500672,
+        "max": 41517056,
+        "raw": [
+          41517056,
+          41500672,
+          41304064
+        ]
+      },
+      "peak_rusage_bytes": {
+        "n": 3,
+        "min": 42680320,
+        "median": 42795008,
+        "max": 42844160,
+        "raw": [
+          42844160,
+          42795008,
+          42680320
+        ]
+      },
+      "features": 100
+    },
+    "kml_1000": {
+      "process_s": {
+        "n": 3,
+        "min": 0.02974195801652968,
+        "median": 0.03013000008650124,
+        "max": 0.03071479103527963,
+        "raw": [
+          0.03071479103527963,
+          0.03013000008650124,
+          0.02974195801652968
+        ]
+      },
+      "baseline_rss_bytes": {
+        "n": 3,
+        "min": 41107456,
+        "median": 41271296,
+        "max": 41304064,
+        "raw": [
+          41304064,
+          41271296,
+          41107456
+        ]
+      },
+      "peak_rss_bytes": {
+        "n": 3,
+        "min": 46530560,
+        "median": 46759936,
+        "max": 46874624,
+        "raw": [
+          46874624,
+          46759936,
+          46530560
+        ]
+      },
+      "peak_rusage_bytes": {
+        "n": 3,
+        "min": 48119808,
+        "median": 48316416,
+        "max": 48431104,
+        "raw": [
+          48431104,
+          48316416,
+          48119808
+        ]
+      },
+      "features": 1000
+    },
+    "kml_10000": {
+      "process_s": {
+        "n": 3,
+        "min": 0.29386020894162357,
+        "median": 0.29744270793162286,
+        "max": 0.302702666958794,
+        "raw": [
+          0.29386020894162357,
+          0.302702666958794,
+          0.29744270793162286
+        ]
+      },
+      "baseline_rss_bytes": {
+        "n": 3,
+        "min": 41664512,
+        "median": 41680896,
+        "max": 41844736,
+        "raw": [
+          41844736,
+          41680896,
+          41664512
+        ]
+      },
+      "peak_rss_bytes": {
+        "n": 3,
+        "min": 90734592,
+        "median": 91078656,
+        "max": 102465536,
+        "raw": [
+          91078656,
+          102465536,
+          90734592
+        ]
+      },
+      "peak_rusage_bytes": {
+        "n": 3,
+        "min": 102301696,
+        "median": 102465536,
+        "max": 102662144,
+        "raw": [
+          102662144,
+          102465536,
+          102301696
+        ]
+      },
+      "features": 10000
+    },
+    "shp_1000": {
+      "process_s": {
+        "n": 3,
+        "min": 0.02251375000923872,
+        "median": 0.02335825003683567,
+        "max": 0.025577875087037683,
+        "raw": [
+          0.02251375000923872,
+          0.02335825003683567,
+          0.025577875087037683
+        ]
+      },
+      "baseline_rss_bytes": {
+        "n": 3,
+        "min": 40566784,
+        "median": 40812544,
+        "max": 40927232,
+        "raw": [
+          40566784,
+          40812544,
+          40927232
+        ]
+      },
+      "peak_rss_bytes": {
+        "n": 3,
+        "min": 41123840,
+        "median": 41418752,
+        "max": 41648128,
+        "raw": [
+          41123840,
+          41418752,
+          41648128
+        ]
+      },
+      "peak_rusage_bytes": {
+        "n": 3,
+        "min": 46989312,
+        "median": 47284224,
+        "max": 47333376,
+        "raw": [
+          46989312,
+          47284224,
+          47333376
+        ]
+      },
+      "features": 1000
+    }
+  },
+  "inproc": {
+    "kml_100": {
+      "upload_ms": {
+        "n": 5,
+        "min": 1.5022079460322857,
+        "median": 3.215709002688527,
+        "max": 8.053499972447753,
+        "raw": [
+          8.053499972447753,
+          3.215709002688527,
+          1.6712090000510216,
+          1.5022079460322857,
+          4.080374957993627
+        ]
+      },
+      "e2e_s": {
+        "n": 5,
+        "min": 0.009280208963900805,
+        "median": 0.011079374933615327,
+        "max": 0.0908398749306798,
+        "raw": [
+          0.0908398749306798,
+          0.011079374933615327,
+          0.009280208963900805,
+          0.01047291699796915,
+          0.014577958034351468
+        ]
+      },
+      "info_ms": {
+        "n": 5,
+        "min": 0.6844159215688705,
+        "median": 0.7540839724242687,
+        "max": 2.1327908616513014,
+        "raw": [
+          0.6844159215688705,
+          0.7540839724242687,
+          0.7193749770522118,
+          1.0510000865906477,
+          2.1327908616513014
+        ]
+      },
+      "measurements_ms": {
+        "n": 5,
+        "min": 0.6949589587748051,
+        "median": 1.0720831342041492,
+        "max": 1.3959580101072788,
+        "raw": [
+          1.3959580101072788,
+          0.7632500492036343,
+          0.6949589587748051,
+          1.3391249813139439,
+          1.0720831342041492
+        ]
+      },
+      "measurements_bytes": 29943,
+      "features": 100
+    },
+    "kml_1000": {
+      "upload_ms": {
+        "n": 5,
+        "min": 1.495750155299902,
+        "median": 1.7133329529315233,
+        "max": 5.935083143413067,
+        "raw": [
+          5.935083143413067,
+          1.7482498660683632,
+          1.6328750643879175,
+          1.495750155299902,
+          1.7133329529315233
+        ]
+      },
+      "e2e_s": {
+        "n": 5,
+        "min": 0.027300124987959862,
+        "median": 0.031584749929606915,
+        "max": 0.09319412498734891,
+        "raw": [
+          0.09319412498734891,
+          0.02938966592773795,
+          0.027300124987959862,
+          0.031584749929606915,
+          0.03467308287508786
+        ]
+      },
+      "info_ms": {
+        "n": 5,
+        "min": 0.5285409279167652,
+        "median": 0.582417007535696,
+        "max": 0.6906250491738319,
+        "raw": [
+          0.6906250491738319,
+          0.5931660998612642,
+          0.582417007535696,
+          0.5285409279167652,
+          0.5665409844368696
+        ]
+      },
+      "measurements_ms": {
+        "n": 5,
+        "min": 0.7081658113747835,
+        "median": 0.7588749285787344,
+        "max": 1.3452910352498293,
+        "raw": [
+          1.0832499247044325,
+          0.7588749285787344,
+          1.3452910352498293,
+          0.7081658113747835,
+          0.7290421053767204
+        ]
+      },
+      "measurements_bytes": 299401,
+      "features": 1000
+    },
+    "kml_10000": {
+      "upload_ms": {
+        "n": 5,
+        "min": 6.624207831919193,
+        "median": 7.063792087137699,
+        "max": 11.913332855328918,
+        "raw": [
+          11.913332855328918,
+          7.063792087137699,
+          6.624207831919193,
+          6.683124927803874,
+          10.863624978810549
+        ]
+      },
+      "e2e_s": {
+        "n": 5,
+        "min": 0.2735847921576351,
+        "median": 0.2885797501076013,
+        "max": 0.346795333083719,
+        "raw": [
+          0.346795333083719,
+          0.2991705830208957,
+          0.28703429200686514,
+          0.2885797501076013,
+          0.2735847921576351
+        ]
+      },
+      "info_ms": {
+        "n": 5,
+        "min": 0.5376671906560659,
+        "median": 0.5745419766753912,
+        "max": 0.7084589451551437,
+        "raw": [
+          0.5745419766753912,
+          0.7084589451551437,
+          0.5376671906560659,
+          0.5597090348601341,
+          0.5924170836806297
+        ]
+      },
+      "measurements_ms": {
+        "n": 5,
+        "min": 1.52720813639462,
+        "median": 1.7229579389095306,
+        "max": 2.0658329594880342,
+        "raw": [
+          2.0658329594880342,
+          1.7229579389095306,
+          1.52720813639462,
+          1.6762088052928448,
+          1.960792113095522
+        ]
+      },
+      "measurements_bytes": 3029802,
+      "features": 10000
+    },
+    "shp_1000": {
+      "upload_ms": {
+        "n": 5,
+        "min": 1.5557080041617155,
+        "median": 2.7206249069422483,
+        "max": 8.267208002507687,
+        "raw": [
+          8.267208002507687,
+          1.9308750052005053,
+          3.8661661092191935,
+          1.5557080041617155,
+          2.7206249069422483
+        ]
+      },
+      "e2e_s": {
+        "n": 5,
+        "min": 0.023740124888718128,
+        "median": 0.03580320905894041,
+        "max": 0.21104904101230204,
+        "raw": [
+          0.21104904101230204,
+          0.03580320905894041,
+          0.038602250162512064,
+          0.023740124888718128,
+          0.024843249935656786
+        ]
+      },
+      "info_ms": {
+        "n": 5,
+        "min": 0.5912079941481352,
+        "median": 0.7317499257624149,
+        "max": 0.7923750672489405,
+        "raw": [
+          0.7923750672489405,
+          0.7538751233369112,
+          0.6486251950263977,
+          0.5912079941481352,
+          0.7317499257624149
+        ]
+      },
+      "measurements_ms": {
+        "n": 5,
+        "min": 0.7462501525878906,
+        "median": 0.8432499598711729,
+        "max": 1.3981249649077654,
+        "raw": [
+          1.2082499451935291,
+          1.3981249649077654,
+          0.8090001065284014,
+          0.7462501525878906,
+          0.8432499598711729
+        ]
+      },
+      "measurements_bytes": 226645,
+      "features": 1000
+    }
+  },
+  "profile": {
+    "kml_1000": {
+      "mode": "profile",
+      "fixture": "kml_1000.kml",
+      "process_s": 0.05961933312937617,
+      "total_profiled_s": 0.05910309700000001,
+      "total_cumulative_s": 0.05935700000000001,
+      "top12": [
+        {
+          "name": "app/pipeline.py:50 (process_file)",
+          "cumulative_s": 0.05935700000000001,
+          "per_call_s": 0.05935700000000001,
+          "tottime_s": 0.000347791,
+          "ncalls": 1
+        },
+        {
+          "name": "app/pipeline.py:86 (_build_payload)",
+          "cumulative_s": 0.056657084,
+          "per_call_s": 0.056657084,
+          "tottime_s": 0.0005982940000000001,
+          "ncalls": 1
+        },
+        {
+          "name": "app/geo/readers.py:109 (read_layer)",
+          "cumulative_s": 0.033146417000000004,
+          "per_call_s": 0.033146417000000004,
+          "tottime_s": 0.000320084,
+          "ncalls": 1
+        },
+        {
+          "name": "app/geo/readers.py:434 (_read_kml)",
+          "cumulative_s": 0.032823875,
+          "per_call_s": 0.032823875,
+          "tottime_s": 0.002345714,
+          "ncalls": 1
+        },
+        {
+          "name": "app/geo/crs.py:210 (prepare)",
+          "cumulative_s": 0.011447750000000001,
+          "per_call_s": 0.011447750000000001,
+          "tottime_s": 0.0016956330000000002,
+          "ncalls": 1
+        },
+        {
+          "name": "app/geo/measure.py:77 (measure)",
+          "cumulative_s": 0.00997054,
+          "per_call_s": 9.97054e-06,
+          "tottime_s": 0.001387908,
+          "ncalls": 1000
+        },
+        {
+          "name": "app/geo/readers.py:350 (_geometry_from_kml)",
+          "cumulative_s": 0.009909089000000001,
+          "per_call_s": 9.909089000000001e-06,
+          "tottime_s": 0.001218075,
+          "ncalls": 1000
+        },
+        {
+          "name": "/Users/verma/.local/share/uv/python/cpython-3.12-macos-aarch64-none/lib/python3.12/xml/etree/ElementTree.py:1194 (parse)",
+          "cumulative_s": 0.008818167,
+          "per_call_s": 0.008818167,
+          "tottime_s": 9.334e-06,
+          "ncalls": 1
+        },
+        {
+          "name": "/Users/verma/.local/share/uv/python/cpython-3.12-macos-aarch64-none/lib/python3.12/xml/etree/ElementTree.py:545 (parse)",
+          "cumulative_s": 0.008808208000000001,
+          "per_call_s": 0.008808208000000001,
+          "tottime_s": 0.000506916,
+          "ncalls": 1
+        },
+        {
+          "name": "app/geo/readers.py:414 (_properties_from_placemark)",
+          "cumulative_s": 0.008492668,
+          "per_call_s": 8.492668e-06,
+          "tottime_s": 0.0020625210000000003,
+          "ncalls": 1000
+        },
+        {
+          "name": "~:0 (<method '_parse_whole' of 'xml.etree.ElementTree.XMLParser' objects>)",
+          "cumulative_s": 0.008263208000000001,
+          "per_call_s": 0.008263208000000001,
+          "tottime_s": 0.008263208000000001,
+          "ncalls": 1
+        },
+        {
+          "name": "app/geo/readers.py:295 (_local)",
+          "cumulative_s": 0.007967776000000001,
+          "per_call_s": 2.2131481584356428e-07,
+          "tottime_s": 0.004790492,
+          "ncalls": 36002
+        }
+      ]
+    },
+    "kml_10000": {
+      "mode": "profile",
+      "fixture": "kml_10000.kml",
+      "process_s": 0.6091343329753727,
+      "total_profiled_s": 0.602501782,
+      "total_cumulative_s": 0.605145916,
+      "top12": [
+        {
+          "name": "app/pipeline.py:50 (process_file)",
+          "cumulative_s": 0.605145916,
+          "per_call_s": 0.605145916,
+          "tottime_s": 0.004159958,
+          "ncalls": 1
+        },
+        {
+          "name": "app/pipeline.py:86 (_build_payload)",
+          "cumulative_s": 0.582548292,
+          "per_call_s": 0.582548292,
+          "tottime_s": 0.007240924,
+          "ncalls": 1
+        },
+        {
+          "name": "app/geo/readers.py:109 (read_layer)",
+          "cumulative_s": 0.34336175,
+          "per_call_s": 0.34336175,
+          "tottime_s": 0.002800541,
+          "ncalls": 1
+        },
+        {
+          "name": "app/geo/readers.py:434 (_read_kml)",
+          "cumulative_s": 0.340558959,
+          "per_call_s": 0.340558959,
+          "tottime_s": 0.023246685000000003,
+          "ncalls": 1
+        },
+        {
+          "name": "app/geo/crs.py:210 (prepare)",
+          "cumulative_s": 0.122010875,
+          "per_call_s": 0.122010875,
+          "tottime_s": 0.017135841000000002,
+          "ncalls": 1
+        },
+        {
+          "name": "app/geo/readers.py:350 (_geometry_from_kml)",
+          "cumulative_s": 0.109037566,
+          "per_call_s": 1.09037566e-05,
+          "tottime_s": 0.012083865000000001,
+          "ncalls": 10000
+        },
+        {
+          "name": "app/geo/measure.py:77 (measure)",
+          "cumulative_s": 0.10553561800000001,
+          "per_call_s": 1.0553561800000001e-05,
+          "tottime_s": 0.014728549,
+          "ncalls": 10000
+        },
+        {
+          "name": "app/geo/readers.py:414 (_properties_from_placemark)",
+          "cumulative_s": 0.08809955900000001,
+          "per_call_s": 8.8099559e-06,
+          "tottime_s": 0.021065273000000002,
+          "ncalls": 10000
+        },
+        {
+          "name": "/Users/verma/.local/share/uv/python/cpython-3.12-macos-aarch64-none/lib/python3.12/xml/etree/ElementTree.py:1194 (parse)",
+          "cumulative_s": 0.08774962500000001,
+          "per_call_s": 0.08774962500000001,
+          "tottime_s": 1.0708000000000001e-05,
+          "ncalls": 1
+        },
+        {
+          "name": "/Users/verma/.local/share/uv/python/cpython-3.12-macos-aarch64-none/lib/python3.12/xml/etree/ElementTree.py:545 (parse)",
+          "cumulative_s": 0.08773837500000001,
+          "per_call_s": 0.08773837500000001,
+          "tottime_s": 0.004844457,
+          "ncalls": 1
+        },
+        {
+          "name": "~:0 (<method '_parse_whole' of 'xml.etree.ElementTree.XMLParser' objects>)",
+          "cumulative_s": 0.08286162500000001,
+          "per_call_s": 0.08286162500000001,
+          "tottime_s": 0.08286162500000001,
+          "ncalls": 1
+        },
+        {
+          "name": "app/geo/readers.py:310 (_parse_coordinates)",
+          "cumulative_s": 0.07551342400000001,
+          "per_call_s": 7.551342400000001e-06,
+          "tottime_s": 0.049709663,
+          "ncalls": 10000
+        }
+      ]
+    }
+  },
+  "tracemalloc_10k": {
+    "mode": "tracemalloc",
+    "fixture": "kml_10000.kml",
+    "process_s": 14.051201791968197,
+    "current_bytes": 241741,
+    "peak_bytes": 35596256,
+    "largest_snapshot_bytes": 30905820,
+    "top": [
+      {
+        "size": 24677476,
+        "count": 345999,
+        "trace": [
+          "  File \"/Users/verma/.local/share/uv/python/cpython-3.12-macos-aarch64-none/lib/python3.12/xml/etree/ElementTree.py\", line 569",
+          "    self._root = parser._parse_whole(source)"
+        ]
+      },
+      {
+        "size": 2838064,
+        "count": 81866,
+        "trace": [
+          "  File \"/Users/verma/Downloads/geospatial-measurement-api/backend/app/geo/readers.py\", line 328",
+          "    values = tuple(map(float, parts))"
+        ]
+      },
+      {
+        "size": 1135248,
+        "count": 16982,
+        "trace": [
+          "  File \"/Users/verma/Downloads/geospatial-measurement-api/backend/app/geo/readers.py\", line 459",
+          "    SourceFeature(geometry=geometry, properties=_properties_from_placemark(placemark))"
+        ]
+      },
+      {
+        "size": 679440,
+        "count": 5662,
+        "trace": [
+          "  File \"/Users/verma/Downloads/geospatial-measurement-api/backend/app/geo/readers.py\", line 419",
+          "    props[\"name\"] = name.strip()"
+        ]
+      },
+      {
+        "size": 429192,
+        "count": 6790,
+        "trace": [
+          "  File \"/Users/verma/Downloads/geospatial-measurement-api/backend/app/geo/readers.py\", line 369",
+          "    return {\"type\": \"LineString\", \"coordinates\": [c[:2] for c in coords]}"
+        ]
+      },
+      {
+        "size": 362240,
+        "count": 5660,
+        "trace": [
+          "  File \"/Users/verma/Downloads/geospatial-measurement-api/backend/app/geo/readers.py\", line 415",
+          "    props: dict = {}"
+        ]
+      },
+      {
+        "size": 271752,
+        "count": 4529,
+        "trace": [
+          "  File \"/Users/verma/Downloads/geospatial-measurement-api/backend/app/geo/readers.py\", line 377",
+          "    shell = [c[:2] for c in _parse_coordinates(outer, local)]"
+        ]
+      },
+      {
+        "size": 145080,
+        "count": 2266,
+        "trace": [
+          "  File \"/Users/verma/Downloads/geospatial-measurement-api/backend/app/geo/readers.py\", line 394",
+          "    return {\"type\": \"Polygon\", \"coordinates\": rings}"
+        ]
+      }
+    ]
+  }
+}

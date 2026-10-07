@@ -10,14 +10,23 @@ services:
       GEO_MAX_UPLOAD_BYTES: "26214400"
       GEO_MAX_ZIP_BYTES: "67108864"
       GEO_RETENTION_DAYS: "7"
+      # Two files processed at once (1 = single inline worker). The pool is why
+      # concurrency is not serialized behind one thread; see README "Performance".
+      GEO_WORKER_PROCESSES: "2"
     volumes:
       # ./data resolves to the checkout, so a fresh clone works without edits;
       # deploy.sh chowns it to the uid the container runs as.
       - ./data:/data
-    # Peak memory scales with the expanded archive, so the cap sits above the
-    # worst case the 64 MB zip budget can produce.
-    cpus: 1.0
+    # cpus: the two pool workers are CPU-bound while parsing and projecting, and
+    # the serving process needs a share of its own for uploads and polling, so the
+    # cap is 2.0. At 1.0 the pool would just timeslice one core again.
+    # Peak memory scales with the expanded archive: worst case is now two files in
+    # flight at once, roughly 2 x 4 x the 64 MB zip budget plus the interpreters,
+    # which still fits under 1g with headroom.
+    cpus: 2.0
     mem_limit: 1g
+    # 3 Python processes (serving + 2 pool workers), their threads, and the
+    # healthcheck: 64 is far above that and still bounds runaway forking.
     pids_limit: 64
     read_only: true
     tmpfs:

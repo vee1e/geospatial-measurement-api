@@ -44,6 +44,40 @@ class SourceLayer:
     features: list[SourceFeature]
     crs_wkt: str | None
     notes: list[str] = field(default_factory=list)
+    # Extent gathered while reading: four compares per coordinate block, folded in
+    # only for geometries that were actually accepted. None when no feature
+    # exposes a finite coordinate pair.
+    bounds: tuple[float, float, float, float] | None = None
+
+
+class _BoundsAcc:
+    """Running min/max of the coordinates a reader has accepted so far.
+
+    Only finite x/y pairs count, so the extent feeds the projection choice directly.
+    """
+
+    __slots__ = ("found", "maxx", "maxy", "minx", "miny")
+
+    def __init__(self) -> None:
+        self.minx = self.miny = math.inf
+        self.maxx = self.maxy = -math.inf
+        self.found = False
+
+    def add(self, x: float, y: float) -> None:
+        if not (math.isfinite(x) and math.isfinite(y)):
+            return
+        self.found = True
+        if x < self.minx:
+            self.minx = x
+        if x > self.maxx:
+            self.maxx = x
+        if y < self.miny:
+            self.miny = y
+        if y > self.maxy:
+            self.maxy = y
+
+    def value(self) -> tuple[float, float, float, float] | None:
+        return (self.minx, self.miny, self.maxx, self.maxy) if self.found else None
 
 
 def detect_format(filename: str) -> str:
@@ -145,10 +179,14 @@ def _read_shapefile_zip(path: Path, settings: Settings) -> SourceLayer:
     if dbf is None:
         notes.append("no .dbf sidecar found; attributes will be empty")
 
+    features, bounds = _read_shapefile_records(
+        shp_bytes, dbf, shx, max_features=settings.max_features
+    )
     return SourceLayer(
-        features=_read_shapefile_records(shp_bytes, dbf, shx),
+        features=features,
         crs_wkt=prj_bytes.decode("utf-8", errors="replace") if prj_bytes else None,
         notes=notes,
+        bounds=bounds,
     )
 
 
@@ -164,8 +202,12 @@ def _clean_attribute(value):
 
 
 def _read_shapefile_records(
-    shp_bytes: bytes, dbf: bytes | None, shx: bytes | None
-) -> list[SourceFeature]:
+    shp_bytes: bytes,
+    dbf: bytes | None,
+    shx: bytes | None,
+    *,
+    max_features: int,
+) -> tuple[list[SourceFeature], tuple[float, float, float, float] | None]:
     kwargs: dict = {"shp": io.BytesIO(shp_bytes)}
     if dbf is not None:
         kwargs["dbf"] = io.BytesIO(dbf)
@@ -176,20 +218,68 @@ def _read_shapefile_records(
     except Exception as exc:
         raise FileRejected(f"could not read shapefile: {exc}") from exc
 
+    # The header states the shape count, so an over-limit file is refused without
+    # parsing a single record. The message matches the pipeline's limit error.
+    if reader.numShapes > max_features:
+        raise FileRejected(
+            f"file has {reader.numShapes} features, limit is {max_features}"
+        )
+
+    acc = _BoundsAcc()
     features: list[SourceFeature] = []
     with reader:
         if dbf is None:
             # A geometry-only Shapefile is a normal export; pyshp reads it fine.
             for shape in reader.shapes():
-                features.append(SourceFeature(geometry=_geo_interface(shape), properties={}))
-            return features
+                geometry = _geo_interface(shape)
+                if geometry is not None:
+                    _accumulate_shape_bounds(shape, geometry, acc)
+                features.append(SourceFeature(geometry=geometry, properties={}))
+            return features, acc.value()
 
         fields = [f[0] for f in reader.fields[1:]]  # skip the deletion-flag field
         for record in reader.shapeRecords():
             pairs = zip(fields, record.record, strict=False)
             props = {key: _clean_attribute(value) for key, value in pairs}
-            features.append(SourceFeature(geometry=_geo_interface(record.shape), properties=props))
-    return features
+            geometry = _geo_interface(record.shape)
+            if geometry is not None:
+                _accumulate_shape_bounds(record.shape, geometry, acc)
+            features.append(SourceFeature(geometry=geometry, properties=props))
+    return features, acc.value()
+
+
+def _accumulate_shape_bounds(shape, geometry, acc: _BoundsAcc) -> None:
+    """Fold one shape's extent into the accumulator.
+
+    pyshp carries a bbox in the record header for polygons and polylines, which is
+    free; point and multipoint records have none, so those fall back to their points.
+    Only coordinates that ended up in the geometry count, so the result matches a
+    walk over the GeoJSON mapping.
+    """
+    bbox = getattr(shape, "bbox", None)
+    if bbox:
+        acc.add(bbox[0], bbox[1])
+        acc.add(bbox[2], bbox[3])
+        return
+    _accumulate_geometry_bounds(geometry, acc)
+
+
+def _accumulate_geometry_bounds(geometry, acc: _BoundsAcc) -> None:
+    if geometry.get("type") == "GeometryCollection":
+        for part in geometry.get("geometries") or ():
+            _accumulate_geometry_bounds(part, acc)
+        return
+    def walk(node) -> None:
+        if not isinstance(node, (list, tuple)) or not node:
+            return
+        if isinstance(node[0], (int, float)):
+            if len(node) >= 2:
+                acc.add(node[0], node[1])
+            return
+        for child in node:
+            walk(child)
+
+    walk(geometry.get("coordinates"))
 
 
 def _geo_interface(shape) -> dict | None:
@@ -217,30 +307,65 @@ def _child_text(element, name: str) -> str | None:
     return None
 
 
-def _parse_coordinates(text: str | None) -> list[tuple[float, ...]]:
+def _parse_coordinates(
+    text: str | None, acc: _BoundsAcc | None = None
+) -> list[tuple[float, ...]]:
+    """Split a KML coordinate block into tuples of floats.
+
+    When `acc` is given it records the bounds as the floats appear, so the caller
+    can fold them into the layer extent for free if the geometry is accepted.
+    `tuple(map(float, parts))` instead of a generator expression is ~24% quicker
+    over the bench fixtures (bench/parse_variants.py), with identical output and
+    identical handling of malformed chunks.
+    """
     points: list[tuple[float, ...]] = []
+    append = points.append
     for chunk in (text or "").split():
         parts = chunk.split(",")
         if len(parts) < 2:
             continue
         try:
-            values = tuple(float(p) for p in parts)
+            values = tuple(map(float, parts))
         except ValueError:
             continue
-        points.append(values)
+        append(values)
+        if acc is not None:
+            acc.add(values[0], values[1])
     return points
 
 
-def _geometry_from_kml(element) -> dict | None:
-    """Turn a KML geometry element into a GeoJSON geometry mapping."""
+def _merge_bounds(dst: _BoundsAcc, src: _BoundsAcc) -> None:
+    """Fold one coordinate block's extent into the layer extent (four compares)."""
+    if not src.found:
+        return
+    dst.add(src.minx, src.miny)
+    dst.add(src.maxx, src.maxy)
+
+
+def _add_points(acc: _BoundsAcc, points) -> None:
+    for point in points:
+        acc.add(point[0], point[1])
+
+
+def _geometry_from_kml(element, acc: _BoundsAcc) -> dict | None:
+    """Turn a KML geometry element into a GeoJSON geometry mapping.
+
+    `acc` receives the coordinates of every ring/line only once that geometry is
+    actually accepted, so dropped sub-geometries never affect the layer extent.
+    """
     kind = _local(element.tag)
+    local = _BoundsAcc()
     if kind == "Point":
         coords = _parse_coordinates(_child_text(element, "coordinates"))
-        return {"type": "Point", "coordinates": coords[0][:2]} if coords else None
+        if not coords:
+            return None
+        _add_points(acc, coords[:1])  # only the first tuple survives below
+        return {"type": "Point", "coordinates": coords[0][:2]}
     if kind == "LineString":
-        coords = _parse_coordinates(_child_text(element, "coordinates"))
+        coords = _parse_coordinates(_child_text(element, "coordinates"), local)
         if len(coords) < 2:
             return None
+        _merge_bounds(acc, local)
         return {"type": "LineString", "coordinates": [c[:2] for c in coords]}
     if kind == "Polygon":
         outer = None
@@ -249,18 +374,30 @@ def _geometry_from_kml(element) -> dict | None:
                 outer = _child_text(ring, "coordinates")
         if outer is None:
             return None
-        shell = [c[:2] for c in _parse_coordinates(outer)]
+        shell = [c[:2] for c in _parse_coordinates(outer, local)]
         if len(shell) < 3:
             return None
+        _merge_bounds(acc, local)
         rings = [shell]
         for boundary in _children(element, "innerBoundaryIs"):
             for ring in _children(boundary, "LinearRing"):
-                hole = [c[:2] for c in _parse_coordinates(_child_text(ring, "coordinates"))]
+                hole_local = _BoundsAcc()
+                hole = [
+                    c[:2]
+                    for c in _parse_coordinates(
+                        _child_text(ring, "coordinates"), hole_local
+                    )
+                ]
                 if len(hole) >= 3:
                     rings.append(hole)
+                    _merge_bounds(acc, hole_local)
         return {"type": "Polygon", "coordinates": rings}
     if kind == "MultiGeometry":
-        parts = [geo for child in element if (geo := _geometry_from_kml(child)) is not None]
+        parts = [
+            geo
+            for child in element
+            if (geo := _geometry_from_kml(child, acc)) is not None
+        ]
         if not parts:
             return None
         if len(parts) == 1:
@@ -307,6 +444,7 @@ def _read_kml(path: Path) -> SourceLayer:
     if not placemarks:
         raise FileRejected("KML contains no placemarks")
 
+    acc = _BoundsAcc()
     features: list[SourceFeature] = []
     for placemark in placemarks:
         geom_element = None
@@ -314,9 +452,11 @@ def _read_kml(path: Path) -> SourceLayer:
             if _local(child.tag) in {"Point", "LineString", "Polygon", "MultiGeometry"}:
                 geom_element = child
                 break
-        geometry = _geometry_from_kml(geom_element) if geom_element is not None else None
+        geometry = (
+            _geometry_from_kml(geom_element, acc) if geom_element is not None else None
+        )
         features.append(
             SourceFeature(geometry=geometry, properties=_properties_from_placemark(placemark))
         )
 
-    return SourceLayer(features=features, crs_wkt=KML_CRS_WKT)
+    return SourceLayer(features=features, crs_wkt=KML_CRS_WKT, bounds=acc.value())

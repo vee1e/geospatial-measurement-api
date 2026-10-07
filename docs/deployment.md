@@ -119,5 +119,8 @@ Set in `compose.yaml` under `services.geoapi.environment`:
 | --- | --- | --- |
 | `GEO_CORS_ORIGINS` | `https://geo.lverma.com` plus the preview URL | Origins allowed to call the API directly |
 | `GEO_MAX_UPLOAD_BYTES` | `26214400` | 25 MB upload cap |
+| `GEO_WORKER_PROCESSES` | `2` | Files the worker pool processes at once (`1` = inline worker) |
 
-Everything else uses the defaults listed in the README.
+Everything else uses the defaults listed in the README. The container is capped at
+`cpus: 2.0` because the two pool workers plus the serving process need more than one
+core; the `GEO_WORKER_PROCESSES` comment in `compose.yaml` carries the reasoning.

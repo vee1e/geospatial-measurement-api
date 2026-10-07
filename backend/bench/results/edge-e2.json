@@ -1,0 +1,48 @@
+{
+  "sections": [
+    "upload25"
+  ],
+  "flags": {
+    "GEO_EDGE_ETAG": "<unset>",
+    "GEO_EDGE_MOVE_UPLOAD": "1",
+    "GEO_EDGE_INLINE_LIMIT": "<unset>",
+    "GEO_WORKER_PROCESSES": "<unset>"
+  },
+  "reps": 5,
+  "port": 8127,
+  "note": "timings taken while another benchmark process runs on this machine",
+  "loadavg_start": [
+    4.0263671875,
+    4.81689453125,
+    5.49755859375
+  ],
+  "started_utc": "2026-10-07T14:59:24Z",
+  "upload25_ms": {
+    "n": 5,
+    "min": 170.46791594475508,
+    "median": 178.8553330115974,
+    "max": 191.37941603548825,
+    "raw": [
+      191.37941603548825,
+      188.30233300104737,
+      178.8553330115974,
+      170.46791594475508,
+      175.71716709062457
+    ]
+  },
+  "upload25_bytes": 25000000,
+  "loadavg_end": [
+    4.0263671875,
+    4.81689453125,
+    5.49755859375
+  ],
+  "spool_probe_via_starlette_parser": {
+    "how": "MultiPartParser.parse() over a 2 MB multipart body, same class the endpoint receives",
+    "rolled": true,
+    "name_attr": "6 (int: the file descriptor, not a path)",
+    "path_backed": false,
+    "nlink": 0,
+    "conclusion": "tempfile rolls the spool to TemporaryFile, which unlinks on open; no directory entry exists, so shutil.move/rename has no source path. The move fast path never triggers; upload falls back to the copy."
+  },
+  "move_fast_path_taken": false
+}

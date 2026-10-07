@@ -1,0 +1,41 @@
+{
+  "sections": [
+    "chunked413"
+  ],
+  "flags": {
+    "GEO_EDGE_ETAG": "<unset>",
+    "GEO_EDGE_MOVE_UPLOAD": "<unset>",
+    "GEO_EDGE_INLINE_LIMIT": "1",
+    "GEO_WORKER_PROCESSES": "<unset>"
+  },
+  "reps": 5,
+  "port": 8127,
+  "note": "timings taken while another benchmark process runs on this machine",
+  "loadavg_start": [
+    2.896484375,
+    4.1455078125,
+    5.0927734375
+  ],
+  "started_utc": "2026-10-07T15:02:34Z",
+  "chunked30mb_413_ms": {
+    "n": 5,
+    "min": 61.00574997253716,
+    "median": 72.43341603316367,
+    "max": 74.34950000606477,
+    "raw": [
+      68.74249991960824,
+      73.60995910130441,
+      74.34950000606477,
+      61.00574997253716,
+      72.43341603316367
+    ]
+  },
+  "chunked30mb_codes": [
+    413
+  ],
+  "loadavg_end": [
+    2.896484375,
+    4.1455078125,
+    5.0927734375
+  ]
+}

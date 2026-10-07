@@ -1,0 +1,39 @@
+{
+  "sections": [
+    "upload25"
+  ],
+  "flags": {
+    "GEO_EDGE_ETAG": "<unset>",
+    "GEO_EDGE_MOVE_UPLOAD": "<unset>",
+    "GEO_EDGE_INLINE_LIMIT": "<unset>",
+    "GEO_WORKER_PROCESSES": "<unset>"
+  },
+  "reps": 5,
+  "port": 8127,
+  "note": "timings taken while another benchmark process runs on this machine",
+  "loadavg_start": [
+    4.94873046875,
+    4.90380859375,
+    5.05615234375
+  ],
+  "started_utc": "2026-10-07T15:10:45Z",
+  "upload25_ms": {
+    "n": 5,
+    "min": 151.2953748460859,
+    "median": 170.90733302757144,
+    "max": 200.07700007408857,
+    "raw": [
+      151.2953748460859,
+      159.99241708777845,
+      170.90733302757144,
+      185.5675419792533,
+      200.07700007408857
+    ]
+  },
+  "upload25_bytes": 25000000,
+  "loadavg_end": [
+    4.94873046875,
+    4.90380859375,
+    5.05615234375
+  ]
+}

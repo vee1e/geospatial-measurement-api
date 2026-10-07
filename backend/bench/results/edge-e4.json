@@ -1,0 +1,43 @@
+{
+  "sections": [
+    "concurrent"
+  ],
+  "flags": {
+    "GEO_EDGE_ETAG": "<unset>",
+    "GEO_EDGE_MOVE_UPLOAD": "<unset>",
+    "GEO_EDGE_INLINE_LIMIT": "<unset>",
+    "GEO_WORKER_PROCESSES": "4"
+  },
+  "reps": 5,
+  "port": 8127,
+  "note": "timings taken while another benchmark process runs on this machine",
+  "loadavg_start": [
+    4.09228515625,
+    3.97314453125,
+    4.83203125
+  ],
+  "started_utc": "2026-10-07T15:05:18Z",
+  "concurrent_8x_kml1000": {
+    "wall_s": {
+      "n": 5,
+      "min": 0.13545141695067286,
+      "median": 0.14465641602873802,
+      "max": 0.19957179203629494,
+      "raw": [
+        0.19957179203629494,
+        0.13545141695067286,
+        0.1425060830079019,
+        0.16938558383844793,
+        0.14465641602873802
+      ]
+    },
+    "all_completed": true,
+    "distinct_ids": 40,
+    "ids_total": 40
+  },
+  "loadavg_end": [
+    4.09228515625,
+    3.97314453125,
+    4.83203125
+  ]
+}

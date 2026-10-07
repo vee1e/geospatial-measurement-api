@@ -10,13 +10,19 @@ Three options:
 | Option | What it costs | What it buys |
 | --- | --- | --- |
 | Measure during `POST /api/files/` | Client timeout is tied to file size; a dropped connection wastes all the work | One request, no polling |
-| In-process worker thread (chosen) | The client polls `GET /api/files/{id}/` | Upload returns in milliseconds; parsing and reprojection run off the request path |
+| In-process dispatcher plus a process pool (chosen) | The client polls `GET /api/files/{id}/` | Upload returns in milliseconds; parsing and reprojection run off the request path, two files at a time by default |
 | External queue (Redis + RQ/Celery) | Another service to run, monitor and keep alive | Survives a process restart, scales to several workers |
 
-Chosen: in-process worker. The service has one deployment unit, one CPU-bound task and
-no requirement to survive restarts mid-job. Records left `PENDING` or `PROCESSING` by a
-restart are re-queued at startup, which is the part of the external queue this actually
-needed.
+Chosen: in-process work. The service has one deployment unit and no requirement to
+survive restarts mid-job. Records left `PENDING` or `PROCESSING` by a restart are
+re-queued at startup, which is the part of the external queue this actually needed.
+
+The work does not run on the serving thread. One dispatcher thread drains the queue
+and submits each file once to a pool of separate processes, because the pipeline is
+CPU-bound Python and extra threads in one process made it slower (8 files: 0.44 s in
+one thread, 0.69 s in four; the same 8 files in a 4-process pool took 0.145 s against
+0.532 s single-worker). `GEO_WORKER_PROCESSES` sets the pool size, default 2, and `1`
+falls back to the original single inline worker.
 
 The seam that makes the swap cheap: `worker.Processor` is the only thing that knows a
 queue exists. The endpoints call `processor.enqueue(id)`, so replacing it with Redis

@@ -1,0 +1,73 @@
+{
+  "corpus": [
+    "mixed.kml",
+    "antimeridian.kml",
+    "broken.kml",
+    "shp_prj.zip",
+    "shp_noprj.zip",
+    "shp_feet.zip",
+    "shp_null_shape.zip",
+    "fixture_kml_1000.kml",
+    "fixture_kml_10000.kml",
+    "fixture_shp_1000.zip"
+  ],
+  "rel_tol": 1e-09,
+  "runs": {
+    "c1": {
+      "flags": {
+        "GEO_BATCH_TRANSFORM": "1"
+      },
+      "pass": true,
+      "failures": [],
+      "info": []
+    },
+    "c2": {
+      "flags": {
+        "GEO_BOUNDS_SOURCE": "layer"
+      },
+      "pass": true,
+      "failures": [],
+      "info": []
+    },
+    "c3": {
+      "flags": {
+        "GEO_KML_FAST_PARSE": "1"
+      },
+      "pass": true,
+      "failures": [],
+      "info": []
+    },
+    "c4": {
+      "flags": {
+        "GEO_MEASURE_IMPL": "vector"
+      },
+      "pass": true,
+      "failures": [],
+      "info": [
+        "mixed.kml[2 Polygon]: warnings ['geometry is invalid (self-intersecting ring); value is approximate'] (baseline) != [] (candidate)"
+      ]
+    },
+    "c5": {
+      "flags": {
+        "GEO_HEADER_LIMIT": "1"
+      },
+      "pass": true,
+      "failures": [],
+      "info": []
+    },
+    "all-on": {
+      "flags": {
+        "GEO_BATCH_TRANSFORM": "1",
+        "GEO_BOUNDS_SOURCE": "layer",
+        "GEO_KML_FAST_PARSE": "1",
+        "GEO_MEASURE_IMPL": "vector",
+        "GEO_HEADER_LIMIT": "1"
+      },
+      "pass": true,
+      "failures": [],
+      "info": [
+        "mixed.kml[2 Polygon]: warnings ['geometry is invalid (self-intersecting ring); value is approximate'] (baseline) != [] (candidate)"
+      ]
+    }
+  }
+}
